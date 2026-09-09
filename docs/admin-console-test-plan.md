@@ -1,7 +1,16 @@
 # Jooma Admin Console — Manual Test Plan
 
-Covers all 20 sidebar items. Written against the **Jooma staging** Supabase
+Covers every sidebar item. Written against the **Jooma staging** Supabase
 project (`tkvzsqtgsesodifcakko`).
+
+Some of this is now automated and worth running first, since it is faster and
+catches the things that would be security or accounting bugs:
+
+```bash
+node scripts/verify-colleagues.mjs     # colleague sharing and RLS
+node scripts/verify-ambassadors.mjs    # ambassador attribution and payouts
+pnpm test:e2e                          # the browser suite
+```
 
 Every test has a **Do**, an **Expect**, and where relevant a **Why it matters** —
 because several of these check that the console *refuses* to do something, and
@@ -113,12 +122,32 @@ each.
 
 ### 1.1 Stat tiles
 
-**Do:** Read the eight tiles.
+**Do:** Read the tiles.
 
-**Expect:** Teachers 10 · Paying 1 · MRR £7.99 · Gross margin ~86% · AI cost
-~£1.11 · Generations 60 · Seats 0 · Open tickets 0.
+**Expect:** Teachers · Paying · MRR · Gross margin · AI cost · Generations ·
+Seats · Open tickets. Figures move as you work through this plan; that's the
+point, so treat the numbers here as shape rather than exact values.
 
-Figures move as you work through this plan — that's the point.
+**MRR is not a single figure any more,** and reading it as one is the mistake
+this test exists to prevent. Three separate tiles:
+
+| Tile | Means |
+|---|---|
+| **MRR** | Teachers genuinely being billed, plus school seats |
+| **Comped** | On a paid plan with **no Stripe subscription** — an admin granted it, and nobody is paying |
+| **Ending** | Paying now, cancelled, gone next month |
+
+**Also check the footnote under MRR.** It reads either "Actually billed" (the
+total came live from Stripe, so discounts are reflected) or "List price, Stripe
+unavailable" (it fell back to `plan_config` prices). Those are different numbers
+and the page says which one you are looking at.
+
+**Why it matters:** the old figure was `count(plan <> 'free') x price`, which
+counted comps, counted people who had already cancelled, and ignored discounts.
+On production two live subscribers listed at £7.99 were being billed £0.08 and
+£0.80. A "paying teachers" count that disagrees with the money is expected when
+one teacher holds two subscriptions; it is a count of teachers, not of
+subscriptions.
 
 ### 1.2 "Needs you today"
 
@@ -397,26 +426,161 @@ to £2.99.
 
 ### 3D · Promo codes (`/admin/promos`)
 
-#### 3D.1 Read-only, live from Stripe
+#### 3D.1 Live from Stripe
 
 **Why it matters:** Stripe validates codes at checkout. A code that existed only
-in our database would be rejected the moment a teacher typed it.
+in our database would be rejected the moment a teacher typed it, so this page
+reads and writes Stripe directly and keeps no second copy.
 
 **Expect:** Either an empty state ("No promotion codes in Stripe") or a list of
-**real** Stripe codes. There is deliberately **no "create code" button.**
+**real** Stripe codes, with a **+ New code** button top right.
 
-#### 3D.2 Create one in Stripe and see it appear
+#### 3D.2 Create a code from the console
 
-**Do:** In the Stripe **test-mode** dashboard, create a coupon (50% off, 3
-months) and a promotion code `ZZTESTPROMO`. Add metadata `channel` =
-`Test campaign`. Refresh the page.
+**Do:** Press **+ New code**. Create `ZZTESTPROMO`, 50% off, applying for 3
+months, and put `Test campaign` in "Where it's used". Create it.
 
-**Expect:** `ZZTESTPROMO` appears — offer reads "50% off 3 months", channel
-shows "Test campaign", redemption count 0.
+**Expect:** The code appears in the table with the offer reading "50% off 3
+months", the channel showing "Test campaign", and 0 redemptions. It is also
+visible in the Stripe dashboard, because that is where it was actually created.
 
-**Cleanup:** Deactivate it in Stripe. (Stripe can't delete promotion codes,
-only deactivate — three inert `ZZ*` codes from earlier testing may already be
+**Why it matters:** a code's discount is immutable in Stripe. There is
+deliberately no edit control — changing an offer means a new code — so the only
+things you can do to an existing one are activate and deactivate it.
+
+#### 3D.3 A code created in Stripe also appears
+
+**Do:** In the Stripe dashboard, create a coupon and a promotion code
+`ZZSTRIPESIDE`. Refresh the page.
+
+**Expect:** It appears. Neither side is the "real" one; there is only Stripe.
+
+**Cleanup:** Deactivate both in Stripe. (Stripe can't delete promotion codes,
+only deactivate — several inert `ZZ*` codes from earlier testing may already be
 there.)
+
+---
+
+### 3E · Ambassadors (`/admin/ambassadors`)
+
+Affiliate tracking on top of promo codes: who brought a teacher in, and who is
+owed for it. An ambassador's code **is** an ordinary Stripe promotion code, so
+everything in 3D still applies to it.
+
+**The rule this page exists to enforce:** a referral is payable only once money
+has actually arrived. Free redemptions are tracked and never payable, and neither
+are admin comps. Several tests below check exactly that, and they are the ones
+that matter — the rest is presentation.
+
+#### 3E.1 Empty to start
+
+**Expect:** "No ambassadors yet", four stat tiles all reading 0, and a
+**+ New ambassador** button.
+
+#### 3E.2 Add an ambassador and their code
+
+**Do:** Press **+ New ambassador**. Full name `ZZ Test Ambassador`, email
+`zz-ambassador@example.com`, code `ZZAMBTEST`, 20% off. Leave the redemption
+limit and expiry **blank**. Create.
+
+**Expect:** The row appears, showing the code and "20% off" read live from
+Stripe. Referred, Subscribed, Owed and Paid all read 0.
+
+**Then:** open `/admin/promos`. `ZZAMBTEST` is listed there too, tagged
+`Ambassador: ZZ Test Ambassador` in "Where it's used".
+
+**Why it matters:** the code is a normal promotion code created through the same
+Stripe path as any other. If it did not appear on the promos page, there would be
+two systems creating codes and one of them would eventually be wrong.
+
+**Why blank limits:** a redemption cap or an expiry can refuse the code for
+somebody who signed up months ago and only subscribes now. See 3E.7.
+
+#### 3E.3 A free signup is tracked but not payable
+
+**Do:** In a private window, sign up as a new teacher using
+`/signup?code=ZZAMBTEST`. Carry on to the welcome screen, confirm the code shows
+as applied, and choose **Free**. Back in the admin console, refresh
+`/admin/ambassadors` and click the ambassador's row to expand it.
+
+**Expect:** The teacher is listed with their join date, "Not subscribed" as the
+first subscribed month, plan **Free**, and payout **N/A**. There is **no button**
+on that row.
+
+**Why it matters:** this is the whole shape of the feature in one row. Free
+redemptions are tracked, because they convert later, and they are never payable.
+
+#### 3E.4 A subscriber becomes owed, and can be settled
+
+**Do:** As that teacher, subscribe to Pro (Stripe **test mode**, card
+`4242 4242 4242 4242`). Make sure the webhook is reaching you —
+`stripe listen --forward-to localhost:3000/api/stripe/webhook`. Refresh the
+admin page and expand the row again.
+
+**Expect:** Plan reads **Pro**, the first subscribed month is this month, and the
+payout has moved to **Unpaid** with a **Mark paid** button. The ambassador's
+Subscribed and Owed counts are both 1.
+
+**Then:** press **Mark paid**. It becomes **Paid** with today's date, and
+survives a reload. The audit log records it.
+
+**Why it matters:** the payout appears only after Stripe confirms the payment,
+not when the subscription is created. A card that fails must not create a debt.
+
+#### 3E.5 A comped teacher is never payable
+
+**Do:** Refer a second teacher on the same code who stays on Free, then use
+`/admin/users` to change their plan to Pro by hand.
+
+**Expect:** Their row now reads plan **Pro** but payout stays **N/A** with no
+button, and the ambassador's Subscribed count does **not** go up.
+
+**Why it matters:** a comp sets `plan` and `subscription_status` exactly like a
+real subscriber, and no money changed hands. `stripe_subscription_id IS NULL` is
+the honest discriminator, the same one `teacher_mrr()` uses for MRR.
+
+#### 3E.6 A second code never moves attribution
+
+**Do:** Add a second ambassador with code `ZZAMBTWO`. As the teacher from 3E.3,
+go to `/pricing` and try to apply it.
+
+**Expect:** Refused with "You have already used a code on this account", and the
+teacher stays under the first ambassador.
+
+**Why it matters:** attribution is first-code-wins and permanent. If it could
+move, two ambassadors could be owed for the same teacher.
+
+#### 3E.7 The delayed subscriber
+
+**Do:** Refer a new teacher who chooses **Free**. Then, in Stripe, **deactivate**
+`ZZAMBTEST`. Now sign in as that teacher and subscribe to Pro.
+
+**Expect:** Checkout still opens and the subscription still completes — at full
+price, with Stripe's own code box shown. The referral survives, the ambassador is
+still credited when the payment lands, and the expanded row notes that the code
+was refused at checkout.
+
+**Why it matters:** most conversions do not happen on signup day. A stale code
+must never block a payment, and the ambassador should not lose a referral they
+genuinely made because a code lapsed in the meantime.
+
+**Also try** the ordinary case: a teacher who claimed a still-valid code and
+subscribes days later gets the discount applied automatically, with nothing
+retyped and no code box on the Stripe page.
+
+#### 3E.8 Automated coverage
+
+Most of the above is also checked automatically, and these are faster than
+walking the page:
+
+```bash
+node scripts/verify-ambassadors.mjs   # RLS, the RPC guards, the payout rule
+pnpm test:e2e ambassadors             # the admin table and the payout controls
+pnpm test:e2e ambassador-claim        # claiming, including the delayed subscriber
+```
+
+The first is the one to run before shipping any change here: everything it checks
+would be a security or an accounting bug rather than a broken screen.
 
 ---
 
@@ -691,6 +855,51 @@ the sidebar collapsed.
 
 ---
 
+### 5C · Enquiries (`/admin/enquiries`)
+
+Contact and school enquiries from the marketing site. Separate from the inbox
+because a ticket comes from a teacher with an account and an enquiry usually does
+not.
+
+#### 5C.1 A public enquiry arrives
+
+**Do:** Signed out, submit the form at `/contact` with a `ZZ` prefixed message.
+Open `/admin/enquiries`.
+
+**Expect:** It appears as **New**, with a reference, the sender's details and the
+message. The sidebar badge counts it.
+
+**Why it matters:** this is the only unauthenticated write path in the product.
+It goes through the `submit_enquiry` function rather than an anon insert policy,
+so a failure here is worth reporting precisely.
+
+#### 5C.2 A school enquiry demands more
+
+**Do:** Submit `/contact?type=school` **without** a school name or phone number.
+
+**Expect:** Refused. A school lead with neither cannot be acted on, so it is
+rejected at the database rather than left for somebody to notice.
+
+#### 5C.3 Replying, and the note that must never be sent
+
+**Do:** Open the enquiry, add an **internal note**, then send a **reply**.
+
+**Expect:** Both appear on the thread, visually distinct. The reply is emailed
+and marked as sent; the note is not emailed at all, and shows as a note.
+
+**Why it matters:** mailing an internal note is the single mistake in this
+feature that reaches a customer. If a note ever goes out, stop and report it.
+
+#### 5C.4 Status
+
+**Do:** Move it to **In progress**, then **Closed**.
+
+**Expect:** The badge count drops when it leaves New, and the filters agree.
+
+**Cleanup:** `delete from enquiries where message like 'ZZ%';` (replies cascade.)
+
+---
+
 ## Part 6 — Content
 
 ### 6A · Website & app copy (`/admin/copy`)
@@ -949,6 +1158,13 @@ update profiles set school_id = null where school_id in (select id from schools 
 delete from schools where name like 'ZZ%';
 delete from trusts where name like 'ZZ%';
 
+-- Ambassadors. Codes and referrals cascade from the ambassador, so this one
+-- delete is enough; the Stripe codes are dealt with separately below.
+delete from ambassadors where full_name like 'ZZ%';
+
+-- Enquiries. Replies cascade.
+delete from enquiries where message like 'ZZ%' or name like 'ZZ%';
+
 -- Allowance grants from testing (they expire at month end anyway).
 delete from allowance_grants where reason like '%support issue%'
   and created_at > now() - interval '1 day';
@@ -969,9 +1185,16 @@ update copy_blocks set draft = null where draft like 'ZZ%';
 select 'schools' t, count(*) n from schools where name like 'ZZ%'
 union all select 'threads', count(*) from support_threads where subject like 'ZZ%'
 union all select 'flags', count(*) from safeguarding_flags where reason like 'ZZ%'
-union all select 'announcements', count(*) from announcements where message like 'ZZ%';
+union all select 'announcements', count(*) from announcements where message like 'ZZ%'
+union all select 'ambassadors', count(*) from ambassadors where full_name like 'ZZ%'
+union all select 'enquiries', count(*) from enquiries where message like 'ZZ%';
 -- All should be 0.
 ```
+
+**A faster alternative for ambassadors:** `node scripts/verify-ambassadors.mjs`
+creates and deletes its own fixtures, so it leaves nothing behind even when it
+fails part way through. Prefer it over the manual walkthrough when you only want
+to know whether the rules still hold.
 
 ---
 
@@ -1002,4 +1225,6 @@ Don't raise these; they're tracked:
 | Dashboard | No acquisition/UTM data | [#28](https://github.com/work-whale/jooma/issues/28) |
 | Retention | Nothing purged; **account deletion fails** | [#27](https://github.com/work-whale/jooma/issues/27) |
 | Tools | `lesson-slideshow` unlisted | [#20](https://github.com/work-whale/jooma/issues/20) |
+| Ambassadors | **Payouts are recorded, not made.** Marking a referral Paid is bookkeeping; Jooma never moves money to an ambassador. Pay them out of band and record it here | — |
+| Ambassadors | A referral whose code was refused at checkout still counts, and the teacher pays full price. Deliberate: they were genuinely referred, and only the discount lapsed | — |
 | Images | Shared read scope | [#22](https://github.com/work-whale/jooma/issues/22) |

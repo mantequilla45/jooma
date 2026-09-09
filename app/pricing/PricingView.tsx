@@ -190,6 +190,11 @@ export default function PricingView({
 
         </div>
 
+        {/* An ambassador code, for a teacher who already has an account.
+            Claiming is once-only and permanent, so this quietly disappears for
+            anyone who has already used one. */}
+        <AmbassadorCodeField />
+
         {/* Checkout error */}
         {error && (
           <p className="text-center text-sm mt-4" style={{ color: "#c2342b" }}>{error}</p>
@@ -221,6 +226,102 @@ export default function PricingView({
         </div>
 
       </div>
+    </div>
+  );
+}
+
+/**
+ * "Have a code?" for a teacher who already has an account.
+ *
+ * Claiming records who referred them; the discount itself is applied by Stripe
+ * at checkout, from that claim. So this does not need to be filled in at the
+ * same moment as pressing a plan button, and a code taken today still works on a
+ * subscription started later.
+ *
+ * Renders nothing at all for a signed-out visitor or for someone who has already
+ * used a code, since neither can do anything with it. The check route answers
+ * both cases, so this never has to guess.
+ */
+function AmbassadorCodeField() {
+  const [code, setCode] = useState("");
+  const [state, setState] = useState<"idle" | "checking" | "good" | "bad">("idle");
+  const [message, setMessage] = useState<string | null>(null);
+  const [hidden, setHidden] = useState(false);
+
+  const apply = async () => {
+    const trimmed = code.trim();
+    if (!trimmed) return;
+
+    setState("checking");
+    try {
+      const res = await fetch("/api/ambassadors/claim", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: trimmed }),
+      });
+      const json = await res.json().catch(() => ({}));
+
+      if (res.status === 401) {
+        // Nothing to attach a code to yet. Not an error worth shouting about.
+        setHidden(true);
+        return;
+      }
+      if (!res.ok) {
+        setState("bad");
+        setMessage(json.error ?? "That code could not be applied.");
+        return;
+      }
+      setState("good");
+      setMessage(
+        json.offer
+          ? `${json.code} applied. ${json.offer} on your first month.`
+          : `${json.code} applied.`,
+      );
+    } catch {
+      setState("bad");
+      setMessage("Could not check that code just now.");
+    }
+  };
+
+  if (hidden) return null;
+
+  return (
+    <div className="max-w-md mx-auto mt-8 text-center">
+      <div className="flex gap-2">
+        <input
+          value={code}
+          onChange={(e) => {
+            setCode(e.target.value.toUpperCase());
+            setState("idle");
+            setMessage(null);
+          }}
+          placeholder="Have a code?"
+          aria-label="Promo code"
+          className="flex-1 min-w-0 px-4 py-2.5 rounded-xl text-sm border font-mono tracking-wider"
+          style={{
+            backgroundColor: "var(--j-card)",
+            borderColor: "var(--j-line)",
+            color: "var(--j-ink)",
+          }}
+        />
+        <button
+          type="button"
+          onClick={apply}
+          disabled={state === "checking" || !code.trim() || state === "good"}
+          className="px-5 py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed"
+          style={{ backgroundColor: "var(--j-purple)", color: "#fff" }}
+        >
+          {state === "checking" ? "Checking…" : state === "good" ? "Applied" : "Apply"}
+        </button>
+      </div>
+      {message && (
+        <p
+          className="text-sm mt-2"
+          style={{ color: state === "good" ? "var(--j-purple)" : "#c2342b" }}
+        >
+          {message}
+        </p>
+      )}
     </div>
   );
 }

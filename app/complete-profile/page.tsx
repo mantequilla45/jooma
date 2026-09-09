@@ -124,9 +124,20 @@ export default function CompleteProfilePage() {
     sessionStorage.removeItem("jooma:auth-email");
     sessionStorage.removeItem("jooma:auth-token");
     sessionStorage.removeItem("jooma:auth-refresh");
+
+    // An ambassador code stashed back at /signup?code= is forwarded in the URL
+    // rather than left for the welcome screen to read out of sessionStorage.
+    // That page is server rendered, and a value only the client can see is
+    // discarded during hydration, so the code would silently never appear.
+    const ambassadorCode = sessionStorage.getItem("jooma:ambassador-code");
+
     // Both signup paths (email and Google) end here, and signing in does not,
     // so this is the one place a brand new teacher passes through exactly once.
-    router.push("/welcome");
+    router.push(
+      ambassadorCode
+        ? `/welcome?code=${encodeURIComponent(ambassadorCode)}`
+        : "/welcome",
+    );
     router.refresh();
   };
 
