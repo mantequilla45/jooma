@@ -1,10 +1,27 @@
 "use client";
 
-// Change password.
+// Change password, and add one to a Google account.
 //
-// The only self-serve password change in the app. /create-password is the
-// adjacent flow but a different one: it lands from an admin-issued recovery link
-// (or a fresh sign-up) and sets a password with no current one to check.
+// Two ways to set a password, both always on screen:
+//
+//   1. The form. Verifies the current password, then updates.
+//   2. "Email me a link", for someone who cannot fill in (1): a Google teacher
+//      who never had a password, or anyone who has forgotten theirs.
+//
+// Both are shown because NOTHING TELLS US WHICH ONE SOMEONE NEEDS. The obvious
+// gate, app_metadata.providers containing "email", answers a different question
+// and the alternatives are no better; the effect below records what was tried
+// and why each fails. An earlier version of this file branched on that check and
+// hid the form from every Google account, including the ones that do have a
+// password. Offering both costs a divider and serves everyone.
+//
+// (2) goes through email rather than setting a password from this session
+// because a password is a second way into the account, and an unlocked borrowed
+// laptop should not be able to create one. See requestLink().
+//
+// /create-password is the adjacent flow but a different one: it lands from a
+// recovery link (an admin reset, /forgot-password, or the button below) and sets
+// a password with no current one to check.
 
 import { useEffect, useState } from "react";
 import { Check, Eye, EyeOff, X } from "lucide-react";
@@ -15,10 +32,10 @@ import { ChangePasswordSkeleton } from "./Skeletons";
 export default function ChangePasswordSection() {
   const [loaded, setLoaded] = useState(false);
   const [email, setEmail] = useState<string | null>(null);
-  // An account created through Google has no password to change. Rather than
-  // let the re-auth below fail with something cryptic, the form is replaced with
-  // an explanation.
-  const [hasPassword, setHasPassword] = useState(true);
+  // Adds a line of explanation above the form, and nothing else. It never hides
+  // or disables either option, because it cannot answer the question that would
+  // justify doing so. See the note in the effect below.
+  const [signedUpWithGoogle, setSignedUpWithGoogle] = useState(false);
 
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
@@ -34,6 +51,13 @@ export default function ChangePasswordSection() {
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // The "add a password" branch, for a Google account. Separate state from the
+  // form above because the two are never on screen together, and sharing it
+  // would mean one branch's error could render inside the other.
+  const [linkBusy, setLinkBusy] = useState(false);
+  const [linkSent, setLinkSent] = useState(false);
+  const [linkError, setLinkError] = useState<string | null>(null);
+
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -43,10 +67,26 @@ export default function ChangePasswordSection() {
       } = await supabase.auth.getUser();
       if (cancelled) return;
       setEmail(user?.email ?? null);
-      // `providers` lists every identity linked to the account. "email" is
-      // present exactly when there is a password to verify.
+
+      // Whether this account SIGNED UP with Google. Deliberately not "whether it
+      // has a password", because nothing available to us answers that:
+      //
+      //   - app_metadata.providers records how the account was created and what
+      //     has been linked since. updateUser({ password }) changes neither it
+      //     nor the identity list, so it never gains "email".
+      //   - auth.users.encrypted_password looked promising and is worse: older
+      //     Supabase versions wrote a bcrypt hash for OAuth users and newer ones
+      //     leave it NULL, so on staging three real Google accounts carry a hash
+      //     and the newest carries NULL. It tracks signup date, not credentials.
+      //   - Probing with signInWithPassword returns invalid_credentials either
+      //     way, on purpose, so that route is closed too.
+      //
+      // So this does not gate anything. Both options are offered below and the
+      // attempt decides: a wrong current password says so, and a teacher with no
+      // password uses the link instead. Guessing wrong in either direction hid a
+      // real option from someone who needed it.
       const providers = (user?.app_metadata?.providers ?? []) as string[];
-      setHasPassword(providers.includes("email"));
+      setSignedUpWithGoogle(providers.includes("google") && !providers.includes("email"));
       setLoaded(true);
     })();
     return () => {
@@ -65,6 +105,49 @@ export default function ChangePasswordSection() {
     const t = setTimeout(() => setDone(false), 5000);
     return () => clearTimeout(t);
   }, [done]);
+
+  /**
+   * Adds a password to a Google account, by emailing a link rather than taking
+   * one from this form.
+   *
+   * A password is a second way into the account, so setting one from a live
+   * session would let a borrowed unlocked laptop create a permanent credential
+   * with no second factor. The emailed link proves whoever is asking holds the
+   * mailbox. It lands on /create-password, which now returns here afterwards.
+   *
+   * Posts the signed-in address rather than a typed one: there is no reason to
+   * let this form send mail anywhere else.
+   */
+  const requestLink = async () => {
+    if (!email || linkBusy || linkSent) return;
+    setLinkBusy(true);
+    setLinkError(null);
+
+    let res: Response;
+    try {
+      res = await fetch("/api/auth/password-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+    } catch {
+      setLinkError("Could not reach Jooma. Check your connection and try again.");
+      setLinkBusy(false);
+      return;
+    }
+
+    setLinkBusy(false);
+    if (res.status === 429) {
+      const body = await res.json().catch(() => null);
+      setLinkError(body?.error ?? "Too many requests. Please wait an hour and try again.");
+      return;
+    }
+    if (!res.ok) {
+      setLinkError("Could not send the link. Please try again.");
+      return;
+    }
+    setLinkSent(true);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -123,19 +206,18 @@ export default function ChangePasswordSection() {
         Change password
       </h2>
 
-      {!hasPassword ? (
-        <div className="max-w-lg">
-          <p className="text-sm" style={{ color: "var(--j-ink)" }}>
-            You sign in with Google, so there&apos;s no password on this account
-            to change.
-          </p>
-          <p className="text-sm mt-2" style={{ color: "var(--j-faint)" }}>
-            Your Google account controls how you sign in. To add a password
-            instead, get in touch through Submit ticket.
-          </p>
-        </div>
-      ) : (
-        <form onSubmit={handleSubmit} className="max-w-lg">
+      {/* Shown to a Google signup, where "change password" is the wrong frame:
+          they may well not have one. Not a gate, just an explanation, because
+          nothing can tell us whether they do. */}
+      {signedUpWithGoogle && (
+        <p className="text-sm max-w-lg mb-6" style={{ color: "var(--j-faint)" }}>
+          You signed up with Google. If you&apos;ve never set a password, use
+          Email me a link below to add one. Continue with Google keeps working
+          either way.
+        </p>
+      )}
+
+      <form onSubmit={handleSubmit} className="max-w-lg">
           <PasswordField
             id="current-password"
             label="Current password"
@@ -232,7 +314,51 @@ export default function ChangePasswordSection() {
             )}
           </div>
         </form>
-      )}
+
+      {/* The other way to set a password, always available.
+
+          It is not an alternative branch to the form above but a companion to
+          it, because we cannot tell who needs which. Someone with no password
+          cannot fill in "current password" and would otherwise be stuck at a
+          form that refuses them; someone who has simply forgotten theirs is in
+          the same position while signed in. Both are served by the same link. */}
+      <div
+        className="max-w-lg mt-8 pt-6 border-t"
+        style={{ borderColor: "var(--j-line)" }}
+      >
+        <p className="text-sm" style={{ color: "var(--j-ink)" }}>
+          Don&apos;t know your current password?
+        </p>
+        <p className="text-sm mt-1" style={{ color: "var(--j-faint)" }}>
+          We&apos;ll email {email ?? "you"} a link to set a new one, without
+          needing the old one.
+        </p>
+
+        {linkError && (
+          <p className="mt-4 text-sm text-red-600 font-light">{linkError}</p>
+        )}
+
+        <div className="mt-5 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={requestLink}
+            disabled={linkBusy || linkSent}
+            className="px-6 py-2.5 rounded-xl text-sm font-medium border transition-colors disabled:opacity-60 disabled:cursor-default cursor-pointer"
+            style={{ borderColor: "var(--j-line)", color: "var(--j-ink)" }}
+          >
+            {linkBusy ? "Sending…" : linkSent ? "Link sent" : "Email me a link"}
+          </button>
+          {linkSent && (
+            <span
+              className="text-sm font-medium"
+              role="status"
+              style={{ color: "#1f6b3b" }}
+            >
+              Check your inbox
+            </span>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

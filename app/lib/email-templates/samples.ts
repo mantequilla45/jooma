@@ -19,7 +19,10 @@ export const SAMPLE_PARAMS: Record<EmailTemplateKey, Record<string, string>> = {
     inviterName: "Sam Okafor",
   },
 
-  // app/api/admin/teachers/reset-password/route.ts
+  // app/api/admin/teachers/reset-password/route.ts, and
+  // app/api/auth/password-link/route.ts for the two self-serve triggers
+  // (/forgot-password, and adding a password to a Google account). All three
+  // pass the same two parameters, so one sample covers them.
   password_reset: {
     resetUrl: "https://jooma.app/auth/callback?type=recovery&token=sample",
     firstName: "Priya",

@@ -1,0 +1,32 @@
+-- ── Drop i_have_password() ───────────────────────────────────────────────────
+--
+-- Added by 20260911000000_auth_rate.sql one day earlier, for /profile to decide
+-- whether to show the change-password form or the offer to add one. It shipped
+-- to both databases before the premise was tested, and the premise was wrong.
+--
+-- The function returned `encrypted_password is not null and <> ''`. That does
+-- not mean "this account has a password":
+--
+--   * Older Supabase versions wrote a bcrypt hash for OAuth users; newer ones
+--     leave the column NULL. On staging, three long-standing Google accounts
+--     carry a $2a$ hash while the newest Google signup carries NULL. The column
+--     tracks WHEN the account was made, not what credentials it holds.
+--   * A fresh admin.createUser() with no password at all still produces a hash,
+--     so even a brand new passwordless account read as `true`.
+--
+-- The function therefore answered `true` for every account tested, including the
+-- ones with no password, which is the exact case it existed to detect.
+--
+-- Nothing else answers the question either. app_metadata.providers records how
+-- an account was created and what has been linked since, and updateUser({
+-- password }) changes neither it nor the identity list. Probing with
+-- signInWithPassword returns invalid_credentials whether the password is wrong
+-- or absent, deliberately, so that route is closed too.
+--
+-- So /profile stopped asking. It shows the change form and the emailed-link
+-- option together and lets the attempt decide, which needs no database support.
+--
+-- Dropped rather than left in place unused: a security definer function reading
+-- auth.users is not something to leave lying around for a future caller to find
+-- and trust. Nothing calls it as of this migration.
+drop function if exists i_have_password();

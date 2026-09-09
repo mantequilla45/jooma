@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Check, Eye, EyeSlash, X } from "@phosphor-icons/react/dist/ssr";
 import { createClient } from "@/app/lib/auth/client";
 import { checkPassword } from "@/app/lib/password";
@@ -11,6 +11,11 @@ import styles from "./create-password.module.css";
 
 export default function CreatePasswordPage() {
   const router = useRouter();
+  // Whether this is someone finishing a sign-up or an existing teacher setting
+  // a new password. Only affects the wording: "one more step and your account
+  // is ready" reads oddly to someone who has been teaching with Jooma for a
+  // year. Starts null so nothing flickers before we know.
+  const [returning, setReturning] = useState<boolean | null>(null);
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -22,6 +27,34 @@ export default function CreatePasswordPage() {
   const [confirmTouched, setConfirmTouched] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // A live session plus a profile row means an existing teacher arrived through
+  // a recovery link. Read once on mount purely for the copy; handleSubmit does
+  // its own lookup rather than trusting this, because where it sends them
+  // afterwards matters more than a heading does.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (cancelled) return;
+      if (!user) {
+        setReturning(false);
+        return;
+      }
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("id", user.id)
+        .maybeSingle();
+      if (!cancelled) setReturning(Boolean(profile));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const rules = checkPassword(password);
   const meetsRules = rules.every((r) => r.met);
@@ -44,14 +77,39 @@ export default function CreatePasswordPage() {
     } = await supabase.auth.getUser();
 
     if (user) {
-      // Already signed in: this is the admin password-reset path, which lands
-      // here through /auth/callback?next=/create-password with a live session.
-      // (Google sign-ups no longer reach this page at all; the callback sends
-      // them straight to /complete-profile.)
+      // Already signed in: a recovery link landed here through
+      // /auth/callback?next=/create-password with a live session. Three things
+      // send someone down this branch — an admin reset from the Teachers
+      // drawer, a teacher who used /forgot-password, and a Google teacher
+      // adding a password from /profile.
+      //
+      // (Google SIGN-UPS still never reach this page; the callback sends those
+      // straight to /complete-profile. A Google teacher adding a password later
+      // is a different person at a different point in their life.)
       const { error } = await supabase.auth.updateUser({ password });
       if (error) {
         setError("Could not set your password. Please try again.");
         setLoading(false);
+        return;
+      }
+
+      // Where they go next depends on whether they have a profile.
+      //
+      // This used to fall through to the unconditional push to
+      // /complete-profile below, which was right when a fresh sign-up was the
+      // only way to arrive with a session. It is wrong for everyone else: a
+      // teacher of two years who just reset their password would be dropped
+      // back into onboarding and asked for their name and school again.
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("id", user.id)
+        .maybeSingle();
+      if (profile) {
+        // Back where they started, which for the Google case is the section
+        // that sent them. It now shows the ordinary change-password form,
+        // because the account has an email identity from this point on.
+        router.push("/profile?section=password");
         return;
       }
     } else {
@@ -91,8 +149,12 @@ export default function CreatePasswordPage() {
 
   return (
     <AuthLayout
-      title="Create your password"
-      lede="One more step and your account is ready."
+      title={returning ? "Choose a new password" : "Create your password"}
+      lede={
+        returning
+          ? "Pick something you'll remember. You can sign in with it straight away."
+          : "One more step and your account is ready."
+      }
     >
       <form onSubmit={handleSubmit}>
         <div className={auth.field}>
