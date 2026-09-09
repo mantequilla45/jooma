@@ -1,0 +1,172 @@
+﻿/*
+ * The code panel on the welcome screen.
+ *
+ * Same rules as welcome.module.css: brand tokens on :root, never literal hexes,
+ * and the page paints its own surfaces because it renders outside the app shell.
+ */
+
+.prompt {
+  display: inline-block;
+  margin-top: 24px;
+  padding: 0;
+  background: none;
+  border: 0;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--j-purple);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.prompt:hover {
+  color: var(--j-deep);
+}
+
+.panel {
+  margin-top: 28px;
+  padding: 20px;
+  background: var(--j-card);
+  border: 1px solid var(--j-line);
+  border-radius: var(--j-r-lg);
+  text-align: left;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  padding: 11px 14px;
+  font: inherit;
+  font-size: 15px;
+  font-family: ui-monospace, monospace;
+  letter-spacing: 0.04em;
+  color: var(--j-ink);
+  background: var(--j-bg);
+  border: 1px solid var(--j-line);
+  border-radius: 12px;
+}
+
+.input:focus {
+  outline: 2px solid var(--j-purple);
+  outline-offset: 1px;
+}
+
+.apply {
+  padding: 11px 20px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  color: #fff;
+  background: var(--j-purple);
+  border: 0;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.apply:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.good,
+.bad {
+  margin: 10px 0 0;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.good {
+  color: var(--j-ok, #0f6e56);
+}
+
+.bad {
+  color: var(--j-danger, #b3261e);
+}
+
+.plans {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 18px;
+}
+
+@media (max-width: 560px) {
+  .plans {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.plan {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 14px;
+  text-align: left;
+  font: inherit;
+  background: var(--j-bg);
+  border: 1px solid var(--j-line);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: border-color 0.18s var(--j-ease);
+}
+
+.plan:hover:not(:disabled) {
+  border-color: var(--j-lilac-2);
+}
+
+.plan:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.planName {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--j-ink);
+}
+
+.planPrice {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--j-ink);
+  letter-spacing: -0.01em;
+}
+
+.planPer {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--j-muted);
+}
+
+.planBlurb {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--j-muted);
+}
+
+.planGo {
+  margin-top: 6px;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--j-purple);
+}
+
+.note {
+  margin: 14px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--j-faint);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plan {
+    transition: none;
+  }
+}

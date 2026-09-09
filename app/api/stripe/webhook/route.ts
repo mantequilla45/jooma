@@ -242,6 +242,94 @@ async function grantTopUpCredit(session: Stripe.Checkout.Session) {
   }
 }
 
+// ── Ambassador referrals ─────────────────────────────────────────────────────
+
+/**
+ * Record the first month an ambassador referral actually paid.
+ *
+ * WHY THIS HANGS OFF invoice.paid AND NOT THE SUBSCRIPTION
+ *
+ * A payout should be owed when money arrives, not when a subscription goes
+ * active. Those differ: a card can fail on the first charge, and a subscription
+ * can be comped by an admin with no card at all. Hanging this off a paid invoice
+ * is the same discipline teacher_mrr() applies to MRR — count what was actually
+ * billed, never a plan column that an admin can set by hand.
+ *
+ * IDEMPOTENT BY CONSTRUCTION. The update is conditioned on `first_paid_at is
+ * null`, so a Stripe retry, an out-of-order delivery, or next month's renewal
+ * all find nothing to do. The first paid month stays the first one, and a payout
+ * already settled is never reopened.
+ */
+async function markReferralPaid(inv: Stripe.Invoice) {
+  const customerId = typeof inv.customer === "string" ? inv.customer : (inv.customer?.id ?? null);
+  const userId = await userIdForCustomer(customerId);
+  if (!userId) return;
+
+  // A SUBSCRIPTION invoice only. A credit top-up is a one-off payment and must
+  // never make an ambassador payable: the offer is for bringing in a subscriber.
+  // `parent.type` is how a real invoice identifies itself — verified against the
+  // live account, where both subscription invoices read 'subscription_details'.
+  const parentType = (inv as unknown as { parent?: { type?: string } }).parent?.type;
+  if (parentType !== "subscription_details") return;
+
+  // WHICH PLAN WAS BOUGHT, read from the INVOICE rather than from the profile.
+  //
+  // The profile would be the obvious source, but it is only right if
+  // syncSubscription has already run for this purchase. Stripe does not promise
+  // an order between checkout.session.completed and invoice.paid, so on the
+  // wrong ordering the profile still reads 'free' and this would skip the
+  // referral permanently — the update is once-only, so there is no second
+  // chance at it. The invoice carries the price it charged, which is true
+  // whenever this arrives.
+  //
+  // planForPriceId resolves superseded prices via plan_price_history too, so a
+  // subscriber on an older price is not mistaken for a non-subscriber.
+  // `price` is an id string unexpanded and a Price object when expanded, so
+  // accept either rather than depending on how the event happens to arrive.
+  const price = inv.lines?.data?.[0]?.pricing?.price_details?.price;
+  const priceId = typeof price === "string" ? price : (price?.id ?? null);
+  const plan = priceId ? await planForPriceId(priceId) : null;
+
+  // Pro and Max only. Free is tracked but never payable, and `school` is
+  // invoiced per seat rather than referred.
+  if (plan !== "pro" && plan !== "max") return;
+
+  // Note there is deliberately NO check that the amount paid was nonzero. A 100%
+  // ambassador code bills GBP 0.00 on the first month, and that subscriber is
+  // exactly who the ambassador is owed for. On the live account one such invoice
+  // already reads amount_paid 0 against a GBP 7.99 plan.
+
+  const { error } = await supabaseAdmin
+    .from("ambassador_referrals")
+    .update({
+      first_paid_at: new Date().toISOString(),
+      first_paid_plan: plan,
+      // 'na' becomes 'unpaid': this ambassador is now owed for this teacher.
+      payout_status: "unpaid",
+    })
+    .eq("user_id", userId)
+    .is("first_paid_at", null);
+
+  if (error) console.error("[stripe/webhook] referral payout mark failed", error);
+}
+
+/**
+ * A refunded first payment un-owes the payout.
+ *
+ * Only while it is still 'unpaid'. A payout already marked 'paid' is real money
+ * that has left the building, and silently rewriting it to 'na' would make the
+ * admin console disagree with the bank. Those are settled by hand.
+ */
+async function reverseReferralPayout(userId: string) {
+  const { error } = await supabaseAdmin
+    .from("ambassador_referrals")
+    .update({ first_paid_at: null, first_paid_plan: null, payout_status: "na" })
+    .eq("user_id", userId)
+    .eq("payout_status", "unpaid");
+
+  if (error) console.error("[stripe/webhook] referral payout reversal failed", error);
+}
+
 // ── Invoice mirroring ────────────────────────────────────────────────────────
 // Stripe remains the system of record for card payments; these rows are a local
 // mirror so the admin console can list card charges and school BACS invoices in
@@ -482,6 +570,14 @@ async function syncRefund(charge: Stripe.Charge) {
   if (paymentIntentId) {
     await reverseTopUpCredit(paymentIntentId, charge.amount);
   }
+
+  // A refunded subscription payment un-owes any ambassador payout it created.
+  // Only while still 'unpaid' — see reverseReferralPayout.
+  const customerId = typeof charge.customer === "string" ? charge.customer : (charge.customer?.id ?? null);
+  const refundedUserId = await userIdForCustomer(customerId);
+  if (refundedUserId) {
+    await reverseReferralPayout(refundedUserId);
+  }
 }
 
 /**
@@ -584,7 +680,11 @@ export async function POST(req: NextRequest) {
       }
       case "invoice.paid":
       case "invoice.payment_succeeded": {
-        await syncInvoice(event.data.object as Stripe.Invoice, "paid");
+        const inv = event.data.object as Stripe.Invoice;
+        await syncInvoice(inv, "paid");
+        // Money has actually arrived, which is the moment an ambassador becomes
+        // owed for this teacher. Idempotent: only ever writes the FIRST payment.
+        await markReferralPaid(inv);
         break;
       }
       case "invoice.payment_failed": {

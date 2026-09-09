@@ -4,6 +4,7 @@ import { createClient } from "@/app/lib/auth/server";
 import { v2ToolForSlug, toolSolid } from "@/app/lib/tools";
 import { SquircleDefs, ToolTile } from "@/app/components/v2/Squircle";
 import Wordmark from "@/app/components/v2/Wordmark";
+import AmbassadorCode from "./AmbassadorCode";
 import styles from "./welcome.module.css";
 
 /*
@@ -27,12 +28,27 @@ export const metadata = { title: "Welcome to Jooma" };
  *  tiles read as different kinds of job rather than a row of one colour. */
 const FIRST_STOPS = ["slideshow", "lesson-planner", "worksheet-generator", "quiz-generator"];
 
-export default async function WelcomePage() {
+export default async function WelcomePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ code?: string }>;
+}) {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
+
+  // An ambassador code travels here in the URL, forwarded by /complete-profile
+  // from the sessionStorage stash that /signup?code= wrote.
+  //
+  // READ ON THE SERVER, deliberately. The client could read sessionStorage
+  // itself, but this page is server rendered: a client-only initial value gets
+  // discarded during hydration and the panel renders collapsed with an empty
+  // box. Passing it down as a prop means the server and the first client render
+  // already agree. The client still reads the stash as a fallback for anyone
+  // who arrives here without the query string.
+  const { code } = await searchParams;
 
   const { data: profile } = await supabase
     .from("profiles")
@@ -61,6 +77,11 @@ export default async function WelcomePage() {
           Everything you need for tomorrow is here, and most of it takes about a minute.
           Pick something to make first.
         </p>
+
+        {/* A code from an ambassador, if they have one. Collapsed to a single
+            line unless a code is waiting in the URL or sessionStorage, so the
+            screen still opens on the tools for everybody else. */}
+        <AmbassadorCode initialCode={code} />
 
         <ul className={styles.grid}>
           {tools.map((tool) => (

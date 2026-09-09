@@ -1,4 +1,5 @@
 import { createClient } from "@/app/lib/auth/server";
+import { supabaseAdmin } from "@/app/lib/supabase-admin";
 import {
   asPlanId,
   nextPlanUp,
@@ -11,6 +12,7 @@ import ResumeButton from "./ResumeButton";
 import UpgradeButton from "./UpgradeButton";
 import PlanPicker from "./PlanPicker";
 import AllowanceMeter from "./AllowanceMeter";
+import AmbassadorCodeField from "./AmbassadorCodeField";
 
 // Overview: current plan, where they stand against this month's allowance, and
 // the actions that change either. The proxy guarantees a session by the time
@@ -30,19 +32,36 @@ export default async function OverviewTab({
     data: { user },
   } = await supabase.auth.getUser();
 
-  const [{ data: profile }, { data: usedMonth }, { data: usedToday }, { data: spend }] =
-    await Promise.all([
-      supabase
-        .from("profiles")
-        .select(
-          "plan, subscription_status, cancel_at_period_end, current_period_end, stripe_customer_id, stripe_subscription_id",
-        )
-        .eq("id", user?.id ?? "")
-        .maybeSingle(),
-      supabase.rpc("my_generation_count_this_month"),
-      supabase.rpc("my_generation_count_today"),
-      supabase.rpc("monthly_ai_spend", { uid: user?.id ?? "" }),
-    ]);
+  const [
+    { data: profile },
+    { data: usedMonth },
+    { data: usedToday },
+    { data: spend },
+    { data: referral },
+  ] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select(
+        "plan, subscription_status, cancel_at_period_end, current_period_end, stripe_customer_id, stripe_subscription_id",
+      )
+      .eq("id", user?.id ?? "")
+      .maybeSingle(),
+    supabase.rpc("my_generation_count_this_month"),
+    supabase.rpc("my_generation_count_today"),
+    supabase.rpc("monthly_ai_spend", { uid: user?.id ?? "" }),
+    // The ambassador code they have claimed, if any.
+    //
+    // SERVICE ROLE, not the caller's client. ambassador_referrals is admin-only
+    // with no teacher read policy — deliberately, since a teacher-writable
+    // referral would let anyone assign themselves an ambassador — so the user's
+    // own client sees nothing here and the field would always offer an input.
+    // Scoped by their own id, so it can only ever find their own row.
+    supabaseAdmin
+      .from("ambassador_referrals")
+      .select("first_paid_at, ambassador_codes ( code )")
+      .eq("user_id", user?.id ?? "")
+      .maybeSingle(),
+  ]);
 
   // monthly_ai_spend returns one row; supabase-js hands back an array.
   const spendRow = (Array.isArray(spend) ? spend[0] : spend) as
@@ -52,6 +71,14 @@ export default async function OverviewTab({
 
   const plan = asPlanId(profile?.plan);
   const planName = PLANS[plan].name;
+
+  // The code field has three states, and "spent" is the one worth being explicit
+  // about: once first_paid_at is set the one-month discount has been used, so
+  // there is nothing to offer and nothing to tell them to do. Showing an input
+  // then would invite a second code that attribution would refuse anyway.
+  const referralCode =
+    (referral?.ambassador_codes as unknown as { code?: string } | null)?.code ?? null;
+  const codeSpent = Boolean(referral?.first_paid_at);
 
   // Two different flags, deliberately not collapsed into one.
   //
@@ -232,6 +259,10 @@ export default async function OverviewTab({
       {!hasSubscription && sellablePlans.length > 0 && (
         <PlanPicker plans={sellablePlans} current={plan} />
       )}
+
+      {/* An ambassador code, beside the plans it discounts. Hidden once the
+          discount has actually been used — see codeSpent above. */}
+      {!codeSpent && <AmbassadorCodeField claimedCode={referralCode} />}
 
       {/* The top-up button lives inside the meter, shown only above 80% used —
           see the reasoning there and the `hide_counter` pricing rule. */}

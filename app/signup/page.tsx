@@ -37,6 +37,15 @@ export default function SignupPage() {
   // An invited teacher must end up on the invited address — that is what
   // /api/invites/accept matches on — so the field is prefilled and locked
   // rather than left open for them to mistype a different one.
+  // An ambassador code arrives as /signup?code=JAMIE20. Stashed the same way as
+  // the invite token, and for the same reason: the screen that offers it is
+  // /welcome, three navigations later. Nothing is verified or granted here —
+  // /api/ambassadors/claim does that once there is an account to attach it to.
+  useEffect(() => {
+    const code = new URLSearchParams(window.location.search).get("code");
+    if (code) sessionStorage.setItem("jooma:ambassador-code", code.trim().toUpperCase());
+  }, []);
+
   useEffect(() => {
     const token = new URLSearchParams(window.location.search).get("invite");
     if (!token) return;

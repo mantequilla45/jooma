@@ -11,6 +11,7 @@ import {
   CreditCard,
   Zap,
   Tag,
+  Handshake,
   BarChart3,
   Settings2,
   ShieldAlert,
@@ -70,6 +71,9 @@ const NAV: NavGroup[] = [
       { href: "/admin/revenue", label: "Payments & invoices", icon: CreditCard },
       { href: "/admin/topups", label: "Top-ups", icon: Zap },
       { href: "/admin/promos", label: "Promo codes", icon: Tag },
+      // Sits under Promo codes because an ambassador's code IS a promo code —
+      // the same Stripe object, with attribution and a payout attached.
+      { href: "/admin/ambassadors", label: "Ambassadors", icon: Handshake },
     ],
   },
   {

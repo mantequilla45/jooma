@@ -116,55 +116,9 @@ function LandingHero({ region, children }: WireframeProps) {
   );
 }
 
-function PricingHeader({ region, children }: WireframeProps) {
-  return (
-    <div
-      className="rounded-xl border p-5 text-center space-y-2.5"
-      style={{ borderColor: C.border, backgroundColor: "#F7F5FC" }}
-    >
-      <p className="text-[11px] font-semibold" style={{ color: "#9A93AD" }}>
-        Jooma
-      </p>
-      {slot(
-        region,
-        "h1",
-        <p
-          className="text-sm font-bold leading-tight text-balance"
-          style={{ color: "#1D1730" }}
-        >
-          {children}
-        </p>,
-        "66%",
-      )}
-      {slot(
-        region,
-        "sub",
-        <p className="text-[10.5px] leading-snug" style={{ color: "#6D6683" }}>
-          {children}
-        </p>,
-        "52%",
-      )}
-      {/* The two plan cards, so the header is visibly a header. */}
-      <div className="grid grid-cols-2 gap-2 pt-1">
-        {["Free", "Pro"].map((p) => (
-          <div
-            key={p}
-            className="rounded-lg border p-2.5 text-left"
-            style={{ borderColor: C.border, backgroundColor: "#FFFFFF" }}
-          >
-            <div className="text-[10px] font-semibold" style={{ color: C.ink }}>
-              {p}
-            </div>
-            <div className="space-y-1 mt-1.5" aria-hidden>
-              <div className="h-1.5 rounded w-full" style={{ backgroundColor: C.divider }} />
-              <div className="h-1.5 rounded w-2/3" style={{ backgroundColor: C.divider }} />
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
+// PricingHeader was here, previewing the /pricing headline and sub. Both keys
+// went when that page became a redirect: the landing page carries its own
+// pricing section, so there was nothing left for this wireframe to describe.
 
 function DashEmpty({ region, children }: WireframeProps) {
   return (
@@ -204,7 +158,6 @@ function DashEmpty({ region, children }: WireframeProps) {
 
 const WIREFRAMES: Record<SurfaceId, (p: WireframeProps) => React.ReactElement> = {
   "landing-hero": LandingHero,
-  "pricing-header": PricingHeader,
   "dash-empty": DashEmpty,
 };
 
