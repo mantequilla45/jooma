@@ -542,13 +542,16 @@ the honest discriminator, the same one `teacher_mrr()` uses for MRR.
 #### 3E.6 A second code never moves attribution
 
 **Do:** Add a second ambassador with code `ZZAMBTWO`. As the teacher from 3E.3,
-go to `/pricing` and try to apply it.
+open `/profile?section=subscription` and look under the plan cards.
 
-**Expect:** Refused with "You have already used a code on this account", and the
-teacher stays under the first ambassador.
+**Expect:** No input at all. It reads "Code applied", naming `ZZAMBTEST`, so
+there is nowhere to type the second code. The teacher stays under the first
+ambassador.
 
 **Why it matters:** attribution is first-code-wins and permanent. If it could
-move, two ambassadors could be owed for the same teacher.
+move, two ambassadors could be owed for the same teacher. The route refuses a
+second code regardless of what the page offers, which is what
+`node scripts/verify-ambassadors.mjs` asserts.
 
 #### 3E.7 The delayed subscriber
 

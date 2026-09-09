@@ -8,7 +8,7 @@
 // A key missing from this map is not an error: CopyPreview renders nothing and
 // the modal falls back to a plain textarea.
 
-export type SurfaceId = "landing-hero" | "pricing-header" | "dash-empty";
+export type SurfaceId = "landing-hero" | "dash-empty";
 
 /** How the string is typeset in the real surface, so the preview shows an
  *  eyebrow as an eyebrow rather than rendering everything as body text. */
@@ -54,18 +54,9 @@ export const SURFACES: Record<string, CopySurface> = {
     role: "fine",
     note: "The small grey line under the button. Says what a teacher gets without paying.",
   },
-  "pricing.headline": {
-    surface: "pricing-header",
-    region: "h1",
-    role: "h1",
-    note: "The pricing page headline, above both plan cards. Also wraps on its own.",
-  },
-  "pricing.sub": {
-    surface: "pricing-header",
-    region: "sub",
-    role: "sub",
-    note: "The line under the pricing headline. Prices themselves come from Plans & pricing.",
-  },
+  // pricing.headline and pricing.sub lived here until /pricing became a
+  // redirect. The landing page carries its own pricing section, so those strings
+  // rendered nowhere and are gone from CopyKey too.
   "dash.empty.title": {
     surface: "dash-empty",
     region: "title",
@@ -82,6 +73,5 @@ export const SURFACES: Record<string, CopySurface> = {
 
 export const SURFACE_LABEL: Record<SurfaceId, string> = {
   "landing-hero": "jooma.ai — hero",
-  "pricing-header": "jooma.ai/pricing — header",
   "dash-empty": "Dashboard — Recently added, empty",
 };

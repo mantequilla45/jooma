@@ -94,6 +94,11 @@ export default function AmbassadorsView({
   const [busy, setBusy] = useState<string | null>(null);
   const [toastNode, fire] = useToast();
 
+  // Filters for the expanded list, keyed by ambassador id so opening two rows
+  // does not make one inherit the other's filter.
+  const [planFilter, setPlanFilter] = useState<Record<string, string>>({});
+  const [payoutFilter, setPayoutFilter] = useState<Record<string, string>>({});
+
   // Referrals are fetched per ambassador on first expand rather than all at
   // once: most of them stay collapsed, and an admin with fifty ambassadors
   // should not pay for every subscriber list to open one.
@@ -340,7 +345,21 @@ export default function AmbassadorsView({
 
                       {open && (
                         <tr>
-                          <td colSpan={8} style={{ backgroundColor: C.divider, padding: 0 }}>
+                          {/* The expanded panel is set off by a tinted GUTTER and
+                              a top border, not by a fill behind the rows. Filling
+                              it made the row separators disappear into the
+                              background and put dark text on mid purple, which is
+                              hard to read at this size. The rows themselves stay
+                              on the card surface, so they read as rows. */}
+                          <td
+                            colSpan={8}
+                            style={{
+                              backgroundColor: C.surface,
+                              padding: 0,
+                              borderTop: `2px solid ${C.brand}`,
+                              boxShadow: `inset 4px 0 0 ${C.brandBg}`,
+                            }}
+                          >
                             <div className="px-6 py-4">
                               {isLoading ? (
                                 <p className="text-sm" style={{ color: C.muted }}>
@@ -351,7 +370,38 @@ export default function AmbassadorsView({
                                   Nobody has used {a.full_name}&apos;s code yet.
                                 </p>
                               ) : (
-                                <Table>
+                                <>
+                                  <p
+                                    className="text-[11px] font-semibold uppercase tracking-wider mb-2"
+                                    style={{ color: C.muted }}
+                                  >
+                                    Referred teachers{" "}
+                                    <span style={{ color: C.ink2 }}>
+                                      {nf.format(list.length)} total ·{" "}
+                                      {nf.format(
+                                        list.filter((r) => r.payout_status === "unpaid").length,
+                                      )}{" "}
+                                      unpaid ·{" "}
+                                      {nf.format(
+                                        list.filter((r) => r.payout_status === "paid").length,
+                                      )}{" "}
+                                      paid
+                                    </span>
+                                  </p>
+
+                                  <ReferralFilters
+                                    rows={list}
+                                    plan={planFilter[a.id] ?? ""}
+                                    payout={payoutFilter[a.id] ?? ""}
+                                    onPlan={(v) =>
+                                      setPlanFilter((p) => ({ ...p, [a.id]: v }))
+                                    }
+                                    onPayout={(v) =>
+                                      setPayoutFilter((p) => ({ ...p, [a.id]: v }))
+                                    }
+                                  />
+
+                                  <Table>
                                   <thead>
                                     <tr className="text-left">
                                       <Th>Teacher</Th>
@@ -362,7 +412,11 @@ export default function AmbassadorsView({
                                     </tr>
                                   </thead>
                                   <tbody>
-                                    {list.map((r) => (
+                                    {filterReferrals(
+                                      list,
+                                      planFilter[a.id] ?? "",
+                                      payoutFilter[a.id] ?? "",
+                                    ).map((r) => (
                                       <Tr key={r.id}>
                                         <Td>
                                           <span style={{ color: C.ink }}>
@@ -421,7 +475,21 @@ export default function AmbassadorsView({
                                       </Tr>
                                     ))}
                                   </tbody>
-                                </Table>
+                                  </Table>
+
+                                  {filterReferrals(
+                                    list,
+                                    planFilter[a.id] ?? "",
+                                    payoutFilter[a.id] ?? "",
+                                  ).length === 0 && (
+                                    <p
+                                      className="text-sm py-3"
+                                      style={{ color: C.muted }}
+                                    >
+                                      No teachers match those filters.
+                                    </p>
+                                  )}
+                                </>
                               )}
                             </div>
                           </td>
@@ -458,6 +526,133 @@ export default function AmbassadorsView({
       )}
       {toastNode}
     </>
+  );
+}
+
+/** Apply the two filters. Kept out of the component so the row count in the
+ *  header and the rows themselves cannot disagree about what is shown. */
+function filterReferrals(rows: ReferralRow[], plan: string, payout: string): ReferralRow[] {
+  return rows.filter((r) => {
+    if (plan && r.current_plan !== plan) return false;
+    if (payout && r.payout_status !== payout) return false;
+    return true;
+  });
+}
+
+/** One pill. Selected is solid brand; the rest are outlined. */
+function Pill({
+  label,
+  count,
+  active,
+  onClick,
+}: {
+  label: string;
+  count?: number;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className="text-xs font-semibold rounded-full px-3 py-1 border transition-colors"
+      style={
+        active
+          ? { backgroundColor: C.brand, borderColor: C.brand, color: "#fff" }
+          : { backgroundColor: C.surface, borderColor: C.border, color: C.ink2 }
+      }
+    >
+      {label}
+      {count !== undefined && (
+        <span style={{ opacity: 0.7 }}> {nf.format(count)}</span>
+      )}
+    </button>
+  );
+}
+
+/**
+ * Filters for one ambassador's referral list.
+ *
+ * Counts sit on the pills so an admin can see there are three unpaid payouts
+ * without clicking through to find out — which is the question this table is
+ * usually open to answer.
+ */
+function ReferralFilters({
+  rows,
+  plan,
+  payout,
+  onPlan,
+  onPayout,
+}: {
+  rows: ReferralRow[];
+  plan: string;
+  payout: string;
+  onPlan: (v: string) => void;
+  onPayout: (v: string) => void;
+}) {
+  const count = (fn: (r: ReferralRow) => boolean) => rows.filter(fn).length;
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mb-3">
+      <div className="flex items-center gap-1.5">
+        <span
+          className="text-[11px] font-semibold uppercase tracking-wider mr-1"
+          style={{ color: C.muted }}
+        >
+          Plan
+        </span>
+        <Pill label="All" count={rows.length} active={plan === ""} onClick={() => onPlan("")} />
+        <Pill
+          label="Free"
+          count={count((r) => r.current_plan === "free")}
+          active={plan === "free"}
+          onClick={() => onPlan("free")}
+        />
+        <Pill
+          label="Pro"
+          count={count((r) => r.current_plan === "pro")}
+          active={plan === "pro"}
+          onClick={() => onPlan("pro")}
+        />
+        <Pill
+          label="Max"
+          count={count((r) => r.current_plan === "max")}
+          active={plan === "max"}
+          onClick={() => onPlan("max")}
+        />
+      </div>
+
+      <div className="flex items-center gap-1.5">
+        <span
+          className="text-[11px] font-semibold uppercase tracking-wider mr-1"
+          style={{ color: C.muted }}
+        >
+          Payout
+        </span>
+        <Pill label="All" active={payout === ""} onClick={() => onPayout("")} />
+        {/* N/A first: it is the commonest state, since a free referral is
+            tracked and never payable. */}
+        <Pill
+          label="N/A"
+          count={count((r) => r.payout_status === "na")}
+          active={payout === "na"}
+          onClick={() => onPayout("na")}
+        />
+        <Pill
+          label="Unpaid"
+          count={count((r) => r.payout_status === "unpaid")}
+          active={payout === "unpaid"}
+          onClick={() => onPayout("unpaid")}
+        />
+        <Pill
+          label="Paid"
+          count={count((r) => r.payout_status === "paid")}
+          active={payout === "paid"}
+          onClick={() => onPayout("paid")}
+        />
+      </div>
+    </div>
   );
 }
 

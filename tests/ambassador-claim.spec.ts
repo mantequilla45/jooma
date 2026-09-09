@@ -168,13 +168,34 @@ test.describe("Claiming an ambassador code", () => {
 
     expect((await referralFor(teacher))?.ambassador_id).toBe(fixture.ambassadorId);
 
-    // Now try the other ambassador's code from the pricing page.
-    await page.goto("/pricing");
-    await page.getByLabel("Promo code").fill(second.code);
-    await page.getByRole("button", { name: "Apply" }).click();
-    await expect(page.getByText(/already used a code/i)).toBeVisible();
+    // The profile's Subscription section does not even offer an input to
+    // somebody who already holds a code: it names the one they have. That is
+    // the honest presentation of a rule that cannot be worked around, rather
+    // than a box that would only be refused.
+    await page.goto("/profile?section=subscription");
+
+    // Scoped to main, and `.first()`. Arriving here by client-side navigation
+    // can leave the outgoing Suspense frame in the DOM for a beat, so an
+    // unscoped getByText briefly matches the same node twice and trips strict
+    // mode. Waiting for the input to be gone first is the real signal that the
+    // resolved section has landed.
+    await expect(page.getByLabel("Promo code")).toHaveCount(0);
+    await expect(page.getByRole("main").getByText("Code applied").first()).toBeVisible();
+    await expect(page.getByRole("main").getByText(fixture.code).first()).toBeVisible();
 
     // Still the first ambassador. Attribution is first-code-wins and permanent.
+    expect((await referralFor(teacher))?.ambassador_id).toBe(fixture.ambassadorId);
+
+    // And the route still refuses a second code, whatever the UI offers.
+    const refused = await page.evaluate(async (code) => {
+      const res = await fetch("/api/ambassadors/claim", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code }),
+      });
+      return res.ok;
+    }, second.code);
+    expect(refused).toBe(false);
     expect((await referralFor(teacher))?.ambassador_id).toBe(fixture.ambassadorId);
   });
 
@@ -212,11 +233,133 @@ test.describe("Claiming an ambassador code", () => {
     expect(referral?.ambassador_id).toBe(fixture.ambassadorId);
     expect(referral?.first_paid_at).toBeNull();
 
-    // And the pricing page no longer offers an input, because they already hold
-    // a code: checkout will resolve it server-side without anything retyped.
-    await page.goto("/pricing");
-    await page.getByLabel("Promo code").fill(fixture.code);
+    // And their own subscription page says the code is waiting, weeks later,
+    // with nothing retyped: checkout resolves it server-side from this row.
+    await page.goto("/profile?section=subscription");
+    await expect(page.getByRole("main").getByText("Code applied").first()).toBeVisible();
+    await expect(page.getByRole("main").getByText(fixture.code).first()).toBeVisible();
+  });
+
+  test("an existing teacher can claim a code from their own subscription page", async ({
+    page,
+  }) => {
+    fixture = await createAmbassador();
+    const teacher = await createTeacher("Nadia");
+    people.push(teacher);
+
+    // The case the move was for: somebody who signed up long ago, was handed a
+    // code, and has to be able to redeem it from a page they actually visit.
+    await signIn(page, teacher);
+    await page.goto("/profile?section=subscription");
+
+    const input = page.getByLabel("Promo code");
+    await input.fill(fixture.code);
+    await expect(input).toHaveValue(fixture.code);
     await page.getByRole("button", { name: "Apply" }).click();
-    await expect(page.getByText(/already used a code/i)).toBeVisible();
+
+    await expect(page.getByText(new RegExp(`${fixture.code} applied`, "i"))).toBeVisible();
+    expect((await referralFor(teacher))?.ambassador_id).toBe(fixture.ambassadorId);
+  });
+
+  test("a spent code offers nothing, because there is nothing left to do", async ({
+    page,
+  }) => {
+    fixture = await createAmbassador();
+    const teacher = await createTeacher("Pia");
+    people.push(teacher);
+
+    // Referred, and already through their first paid month — the shape the
+    // Stripe webhook leaves behind on invoice.paid.
+    const { error } = await admin.from("ambassador_referrals").insert({
+      ambassador_id: fixture.ambassadorId,
+      code_id: fixture.codeId,
+      user_id: teacher.id,
+      first_paid_at: new Date().toISOString(),
+      first_paid_plan: "pro",
+      payout_status: "unpaid",
+    });
+    if (error) throw new Error(`Could not seed the referral: ${error.message}`);
+
+    await signIn(page, teacher);
+    await page.goto("/profile?section=subscription");
+
+    // Neither an input nor a "code applied" note: the offer is spent, and
+    // telling them about a discount they have already had would be noise.
+    await expect(page.getByLabel("Promo code")).toHaveCount(0);
+    await expect(page.getByText("Code applied")).toHaveCount(0);
+  });
+});
+
+/*
+ * The /pricing redirect.
+ *
+ * /pricing used to be the logged-out marketing page and is now a redirect,
+ * because nothing links to it while Stripe's cancel_url still points at it.
+ * That makes it exactly the kind of thing that breaks silently: no teacher
+ * navigates there in normal use, so a regression would only ever surface as
+ * somebody landing on a 404 straight after backing out of a payment.
+ *
+ * These run without an ambassador fixture — they are about the route, not the
+ * feature that happens to have moved off it.
+ */
+test.describe("The /pricing redirect", () => {
+  const people: TestTeacher[] = [];
+
+  test.afterEach(async () => {
+    for (const p of people.splice(0)) await deleteTeacher(p);
+  });
+
+  test("a signed-in teacher lands in their subscription section", async ({ page }) => {
+    const teacher = await createTeacher("Otis");
+    people.push(teacher);
+
+    await signIn(page, teacher);
+    await page.goto("/pricing");
+
+    await expect(page).toHaveURL(/\/profile\?.*section=subscription/);
+    // Really the subscription section, not just a URL that says so.
+    await expect(page.getByRole("navigation", { name: /usage and billing/i })).toBeVisible();
+  });
+
+  test("an abandoned checkout keeps its params across the hop", async ({ page }) => {
+    const teacher = await createTeacher("Perry");
+    people.push(teacher);
+
+    await signIn(page, teacher);
+
+    // THE CASE THAT MATTERS. cancel_url is `${origin}/pricing?checkout=cancelled`
+    // (app/api/stripe/checkout/route.ts), so this is where a teacher lands the
+    // moment they back out of paying us. Dropping the param would turn a
+    // recoverable "changed my mind" into a blank page.
+    await page.goto("/pricing?checkout=cancelled");
+
+    await expect(page).toHaveURL(/\/profile\?.*section=subscription/);
+    await expect(page).toHaveURL(/checkout=cancelled/);
+  });
+
+  test("several params all survive, not just the first", async ({ page }) => {
+    const teacher = await createTeacher("Quinn");
+    people.push(teacher);
+
+    await signIn(page, teacher);
+    await page.goto("/pricing?checkout=cancelled&tab=history");
+
+    await expect(page).toHaveURL(/checkout=cancelled/);
+    await expect(page).toHaveURL(/tab=history/);
+    // `section` is the redirect's own, and must not be duplicated by a caller
+    // sending one: the route drops any incoming `section` and sets its own.
+    const url = new URL(page.url());
+    expect(url.searchParams.getAll("section")).toEqual(["subscription"]);
+  });
+
+  test("a signed-out visitor goes to the landing page's pricing section", async ({
+    page,
+  }) => {
+    // /profile would only bounce them to login, so the honest destination is
+    // the pricing section the marketing nav and footer already link to.
+    await page.goto("/pricing");
+
+    await expect(page).toHaveURL(/\/(#pricing)?$/);
+    await expect(page).not.toHaveURL(/\/login/);
   });
 });

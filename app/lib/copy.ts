@@ -39,8 +39,10 @@ export type CopyKey =
   | "home.hero.sub"
   | "home.hero.cta"
   | "home.hero.reassure"
-  | "pricing.headline"
-  | "pricing.sub"
+  // pricing.headline and pricing.sub were removed when /pricing became a
+  // redirect: the landing page carries its own pricing section and nothing
+  // rendered those strings any more. Leaving them editable in /admin/copy would
+  // have let an admin write copy that appears nowhere.
   | "dash.empty.title"
   | "dash.empty.body";
 
@@ -66,9 +68,6 @@ export const DEFAULTS: CopyMap = {
     "Jooma turns one line into the slides, the worksheet and the comprehension, matched to your year group. Try it on this page. No sign up, no card.",
   "home.hero.cta": "Start free",
   "home.hero.reassure": "Five free resources a month. No card needed.",
-  "pricing.headline": "Start free. Upgrade when it has already saved you a Sunday.",
-  "pricing.sub":
-    "Choose a plan that saves you time, reduces workload, and helps you create better lessons in seconds.",
   "dash.empty.title": "Nothing here yet",
   "dash.empty.body": "Pick a tool and make your first resource. It takes about a minute.",
 };
@@ -103,7 +102,7 @@ const loadPublished = unstable_cache(
  * Published copy, with a code default behind every key.
  *
  * Server components only — this module is `server-only`. Client components take
- * the strings they need as props; see app/pricing/page.tsx for the pattern.
+ * the strings they need as props; see app/page.tsx for the pattern.
  */
 export async function getCopy(): Promise<CopyMap> {
   let published: Record<string, string> = {};
