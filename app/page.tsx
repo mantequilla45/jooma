@@ -188,8 +188,8 @@ export default async function LandingPage({
             "@context": "https://schema.org",
             "@type": "Organization",
             name: "Jooma",
-            url: "https://jooma.ai",
-            logo: "https://jooma.ai/logo/Jooma-logo-v2-round-light-1024.png",
+            url: "https://www.jooma.ai",
+            logo: "https://www.jooma.ai/logo/Jooma-logo-v2-round-light-1024.png",
           }),
         }}
       />
