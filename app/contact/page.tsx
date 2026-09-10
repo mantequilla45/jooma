@@ -13,6 +13,9 @@ export const metadata: Metadata = {
   title: "Contact Jooma",
   description:
     "Get in touch about Jooma, or ask about pricing for your whole school.",
+  // Same apex/www duplicate as the landing page. Every public page needs its
+  // own, because a canonical is per-URL and is not inherited from the layout.
+  alternates: { canonical: "/contact" },
 };
 
 export default async function ContactPage({

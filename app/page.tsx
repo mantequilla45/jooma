@@ -23,10 +23,17 @@ import ClosingCta from "@/app/components/landing/v2/ClosingCta";
 import SiteFooter from "@/app/components/landing/v2/SiteFooter";
 import styles from "@/app/components/landing/v2/landing.module.css";
 
+/* The canonical is load bearing, not decoration. The apex 307s to www, so
+ * Google has seen this page at two addresses, found no declaration of which one
+ * counts, and reported "Duplicate without user-selected canonical" while
+ * choosing a version itself. That guess is what the icon and every other
+ * page-level signal then attach to. Relative on purpose: it resolves against
+ * metadataBase in app/layout.tsx, so the host is stated in exactly one place. */
 export const metadata: Metadata = {
   title: "Jooma. Teaching resources, made in about a minute.",
   description:
     "Type a topic and get the slides, the worksheet and the comprehension, built around the UK curriculum. Try it on this page.",
+  alternates: { canonical: "/" },
 };
 
 /**
