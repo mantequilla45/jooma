@@ -20,6 +20,11 @@ import { publicSettings } from "@/app/lib/settings";
 const MAINTENANCE_ALLOWED = [
   "/maintenance",
   "/login",
+  // An admin who has to sign in to turn maintenance off may also have to reset
+  // their password to do it. Locking recovery behind the holding page is the
+  // same trap as locking /login behind it.
+  "/forgot-password",
+  "/api/auth",
   "/auth",
   "/admin",
   "/api/admin",
@@ -37,6 +42,15 @@ const PUBLIC_PATHS = [
   "/verify",
   "/create-password",
   "/complete-profile",
+  // Someone who cannot sign in obviously cannot be asked for a session first.
+  // The route behind it carries its own honeypot and two throttles rather than
+  // relying on the session it does not have, exactly as /api/enquiries does.
+  //
+  // Note it is NOT in the signed-in bounce below, unlike /login and /signup: a
+  // Google teacher adding a password reaches the same endpoint from /profile
+  // while very much signed in.
+  "/forgot-password",
+  "/api/auth/password-link",
   "/auth",
   "/terms",
   "/privacy",

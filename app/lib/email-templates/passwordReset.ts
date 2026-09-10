@@ -1,10 +1,23 @@
 import { button, escapeHtml, prose, DIVIDER, H1, P, SMALL, type RenderedEmail } from "./shared";
 
 /**
- * Sent when an admin triggers a password reset from the Teachers drawer.
+ * Sent for all three password links, which are the same email:
  *
- * Worth being explicit in the copy that a person did this: a reset email the
- * recipient didn't request reads as a breach attempt otherwise.
+ *   - an admin resetting from the Teachers drawer
+ *     (app/api/admin/teachers/reset-password/route.ts)
+ *   - a teacher who used /forgot-password
+ *   - a Google teacher adding a password from /profile
+ *     (both via app/api/auth/password-link/route.ts)
+ *
+ * The wording is deliberately neutral about who started it. It used to say
+ * "someone on the Jooma team started a password reset", which was true when an
+ * admin was the only trigger and became a lie the moment a teacher could do it
+ * themselves. Naming the wrong actor in a security email is worse than naming
+ * none: a teacher who reset their own password would read that we did it.
+ *
+ * What matters to the reader is unchanged and stays explicit: this was
+ * requested, and ignoring it costs them nothing. A reset email the recipient
+ * didn't ask for reads as a breach attempt otherwise.
  */
 export function passwordResetTemplate(
   params: Record<string, string>,
@@ -20,9 +33,8 @@ export function passwordResetTemplate(
     prose(bodyOverride) ??
     `
     <p ${P}>
-      ${firstName ? `Hi ${firstName} &mdash; s` : "S"}omeone on the Jooma team started
-      a password reset for your account, usually because you asked us to. Click
-      below to choose a new password.
+      ${firstName ? `Hi ${firstName}, a` : "A"} password reset was requested for
+      your Jooma account. Click below to choose a new password.
     </p>`;
 
   return {
@@ -37,7 +49,7 @@ export function passwordResetTemplate(
 
     <p ${SMALL}>
       This link expires shortly and can only be used once. If you didn&rsquo;t ask
-      for a reset you can ignore this email &mdash; your current password will keep
+      for a reset you can ignore this email. Your current password will keep
       working and nothing has changed.
     </p>
   `,

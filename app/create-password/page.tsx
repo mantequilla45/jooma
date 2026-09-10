@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Check, Eye, EyeSlash, X } from "@phosphor-icons/react/dist/ssr";
 import { createClient } from "@/app/lib/auth/client";
 import { checkPassword } from "@/app/lib/password";
@@ -11,6 +11,11 @@ import styles from "./create-password.module.css";
 
 export default function CreatePasswordPage() {
   const router = useRouter();
+  // Whether this is someone finishing a sign-up or an existing teacher setting
+  // a new password. Only affects the wording: "one more step and your account
+  // is ready" reads oddly to someone who has been teaching with Jooma for a
+  // year. Starts null so nothing flickers before we know.
+  const [returning, setReturning] = useState<boolean | null>(null);
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -22,6 +27,89 @@ export default function CreatePasswordPage() {
   const [confirmTouched, setConfirmTouched] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // A live session plus a profile row means an existing teacher arrived through
+  // a recovery link. Purely for the copy; handleSubmit does its own lookup
+  // rather than trusting this, because where it sends them afterwards matters
+  // more than a heading does.
+  //
+  // Cannot be a single getUser() on mount. A recovery link arrives with no
+  // session at all until redeem() below has exchanged its token, so on the first
+  // pass getUser() returns null and `returning` would stick at false. The
+  // teacher resetting a password of two years' standing would be greeted with
+  // "Create your password. One more step and your account is ready." So also
+  // listen for the session arriving: onAuthStateChange fires once the token has
+  // been redeemed, and re-resolves the copy.
+  useEffect(() => {
+    let cancelled = false;
+    const supabase = createClient();
+
+    // Redeem the recovery token first, if one is in the URL.
+    //
+    // The emailed link carries `?token_hash=...&type=recovery` rather than
+    // Supabase's own action_link. Following action_link would leave the session
+    // in the URL fragment, and @supabase/ssr hardcodes flowType "pkce", so its
+    // client only ever looks for a ?code= to exchange and ignores an
+    // implicit-flow fragment completely. Nothing consumed it, no cookie was
+    // written, and this page reported "your session expired" to every teacher
+    // who used the link while signed out. (Anyone already signed in never
+    // noticed: their existing cookie carried them through.)
+    //
+    // verifyOtp() redeems the hashed token directly and writes a real
+    // cookie-backed session, which is what the rest of this page expects.
+    const redeem = async () => {
+      const params = new URLSearchParams(window.location.search);
+      const tokenHash = params.get("token_hash");
+      if (!tokenHash) return;
+      const { error } = await supabase.auth.verifyOtp({
+        token_hash: tokenHash,
+        type: "recovery",
+      });
+      if (cancelled) return;
+      if (error) {
+        // Single-use and short-lived, so the common cause is a link that has
+        // already been followed or has simply aged out.
+        setError("That reset link has expired or has already been used. Please request a new one.");
+        return;
+      }
+      // Strip the token so a refresh cannot try to redeem it a second time and
+      // report the failure above for a reset that actually worked.
+      window.history.replaceState(null, "", window.location.pathname);
+    };
+
+    const resolve = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (cancelled) return;
+      if (!user) {
+        setReturning(false);
+        return;
+      }
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("id", user.id)
+        .maybeSingle();
+      if (!cancelled) setReturning(Boolean(profile));
+    };
+
+    // Redeem before the first resolve, so the copy is decided against the
+    // session the token creates rather than against no session at all.
+    void redeem().then(() => {
+      if (!cancelled) void resolve();
+    });
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(() => {
+      void resolve();
+    });
+
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
+  }, []);
 
   const rules = checkPassword(password);
   const meetsRules = rules.every((r) => r.met);
@@ -44,14 +132,39 @@ export default function CreatePasswordPage() {
     } = await supabase.auth.getUser();
 
     if (user) {
-      // Already signed in: this is the admin password-reset path, which lands
-      // here through /auth/callback?next=/create-password with a live session.
-      // (Google sign-ups no longer reach this page at all; the callback sends
-      // them straight to /complete-profile.)
+      // Already signed in: a recovery link lands here directly with a live
+      // session, which the Supabase browser client reads out of the URL
+      // fragment. Three things send someone down this branch: an admin reset
+      // from the Teachers drawer, a teacher who used /forgot-password, and a
+      // Google teacher adding a password from /profile.
+      //
+      // (Google SIGN-UPS still never reach this page; /auth/callback sends those
+      // straight to /complete-profile. A Google teacher adding a password later
+      // is a different person at a different point in their life.)
       const { error } = await supabase.auth.updateUser({ password });
       if (error) {
         setError("Could not set your password. Please try again.");
         setLoading(false);
+        return;
+      }
+
+      // Where they go next depends on whether they have a profile.
+      //
+      // This used to fall through to the unconditional push to
+      // /complete-profile below, which was right when a fresh sign-up was the
+      // only way to arrive with a session. It is wrong for everyone else: a
+      // teacher of two years who just reset their password would be dropped
+      // back into onboarding and asked for their name and school again.
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("id", user.id)
+        .maybeSingle();
+      if (profile) {
+        // Back where they started, which for the Google case is the section
+        // that sent them. It now shows the ordinary change-password form,
+        // because the account has an email identity from this point on.
+        router.push("/profile?section=password");
         return;
       }
     } else {
@@ -91,8 +204,12 @@ export default function CreatePasswordPage() {
 
   return (
     <AuthLayout
-      title="Create your password"
-      lede="One more step and your account is ready."
+      title={returning ? "Choose a new password" : "Create your password"}
+      lede={
+        returning
+          ? "Pick something you'll remember. You can sign in with it straight away."
+          : "One more step and your account is ready."
+      }
     >
       <form onSubmit={handleSubmit}>
         <div className={auth.field}>

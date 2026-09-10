@@ -188,6 +188,37 @@
   text-decoration: underline;
 }
 
+/* ── Forgot password ─────────────────────────────────────────────────────── */
+
+/* Sits under the password field on the sign-in page, right-aligned against it.
+   Negative top margin pulls it up against the input rather than sitting a full
+   .field gap below, which reads as a separate row. */
+.forgotRow {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: -8px;
+  margin-bottom: 18px;
+}
+
+.forgotRow a {
+  font-size: 0.83rem;
+  font-weight: 800;
+  color: var(--j-purple);
+}
+
+.forgotRow a:hover {
+  text-decoration: underline;
+}
+
+/* Follow-up prose under a banner: what to do if the email does not arrive.
+   Muted, because it is the paragraph for the minority who need it. */
+.hint {
+  margin-top: 16px;
+  font-size: 0.86rem;
+  line-height: 1.55;
+  color: var(--j-muted);
+}
+
 /* ── Messages ────────────────────────────────────────────────────────────── */
 
 /* A one-line failure the teacher can act on by retrying. */

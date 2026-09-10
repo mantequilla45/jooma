@@ -191,6 +191,13 @@ export default function LoginPage() {
           </div>
         </div>
 
+        {/* Under the password field, not beside the label: someone reaches for
+            this after the password has failed them, and that is where they are
+            already looking. */}
+        <div className={auth.forgotRow}>
+          <Link href="/forgot-password">Forgot password?</Link>
+        </div>
+
         {error && error !== SUSPENDED_MESSAGE && (
           <p className={auth.error} role="alert">
             {error}
