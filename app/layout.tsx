@@ -76,7 +76,7 @@ const archivoBlack = Archivo_Black({
  * Organization block on the landing page is the signal that actually names our
  * logo; see app/page.tsx. */
 export const metadata: Metadata = {
-  metadataBase: new URL("https://jooma.ai"),
+  metadataBase: new URL("https://www.jooma.ai"),
   title: "Jooma",
   description: "Teaching resources, made in about a minute",
   icons: {
