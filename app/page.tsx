@@ -167,6 +167,26 @@ export default async function LandingPage({
   // page renders with unresolved variables and no styling at all.
   return (
     <div className={`jooma-v2 ${styles.page}`}>
+      {/* The logo Google shows beside a search result. Without this block there
+          is no machine-readable statement of what our mark is, and a crawler is
+          left inferring one from the favicon, which is how a long-replaced logo
+          survives in the results for months.
+          Square and on a solid ground on purpose: favicon.ico and apple-icon
+          are circular with transparent corners, which renders badly on a white
+          card, so this points at the round-light export instead. */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "Organization",
+            name: "Jooma",
+            url: "https://jooma.ai",
+            logo: "https://jooma.ai/logo/Jooma-logo-v2-round-light-1024.png",
+          }),
+        }}
+      />
+
       {/* The superellipse every tool tile clips to. Must live on the page
           itself: `clip-path: url(#jsq)` resolves against this document. */}
       <SquircleDefs />

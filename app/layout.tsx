@@ -62,9 +62,36 @@ const archivoBlack = Archivo_Black({
   weight: ["400"],
 });
 
+/* metadataBase is what makes every relative URL below resolve absolutely, which
+ * is what a crawler and a social card need. Without it Next emits paths and
+ * Google is left to guess the host.
+ *
+ * The icons here are the same files Next already picks up by convention from
+ * app/favicon.ico and app/apple-icon.png. Declaring them changes nothing a
+ * browser does; it states the intent, and it is the hook for anything that
+ * needs an explicit apple-touch-icon.
+ *
+ * The site icon Google shows in a search result comes from its own crawl and
+ * cache, not from this file, so a stale icon there outlives a deploy. The
+ * Organization block on the landing page is the signal that actually names our
+ * logo; see app/page.tsx. */
 export const metadata: Metadata = {
+  metadataBase: new URL("https://jooma.ai"),
   title: "Jooma",
-  description: "AI-powered tools built for teachers",
+  description: "Teaching resources, made in about a minute",
+  icons: {
+    icon: "/favicon.ico",
+    shortcut: "/favicon.ico",
+    apple: "/apple-icon.png",
+  },
+  openGraph: {
+    type: "website",
+    siteName: "Jooma",
+    url: "/",
+    title: "Jooma",
+    description: "Teaching resources, made in about a minute",
+    images: [{ url: "/logo/Jooma-logo-v2-round-light-1024.png", width: 1024, height: 1024, alt: "Jooma" }],
+  },
 };
 
 /* Without this, mobile browsers render at a ~980px virtual viewport and zoom
