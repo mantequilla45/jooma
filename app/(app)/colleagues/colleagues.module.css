@@ -121,14 +121,23 @@
 }
 
 /* A value the teacher has not reached yet, rendered as words rather than a
-   zero. Same rule as ProfileHeader and TodayView: never a zero as a headline. */
+   zero. Same rule as ProfileHeader and TodayView: never a zero as a headline.
+
+   display: block for the same reason .fstatValue has it: these are spans in a
+   .fstat, so without it an empty value and the label share a line and render
+   as "Not yetDAY STREAK". Every column of a new colleague is empty at once,
+   which is when it is most obvious. */
 .fstatEmpty {
+  display: block;
   color: var(--j-faint);
   font-size: 0.83rem;
   font-weight: 800;
 }
 
+/* Blocked too, so the label can never sit on the value's line whatever
+   precedes it, rather than relying on the sibling above to be a block. */
 .fstatLabel {
+  display: block;
   font-size: 0.66rem;
   color: var(--j-faint);
   font-weight: 800;
