@@ -160,13 +160,17 @@ export async function listColleagues(): Promise<Colleague[]> {
 }
 
 /**
- * Search by name, username or email.
+ * Search by username or email, both exact.
+ *
+ * Names are deliberately not searchable: a prefix match on a surname lets
+ * anybody with an account walk the alphabet and assemble a directory of real
+ * teachers. See 20260912000000 for the reversal and its reasoning.
  *
  * A definer RPC, not a query: profiles is select-own-row-only and email is not
- * on profiles at all. Every bound (exact match on email and username, prefix on
- * name, a three character floor, ten results, no email in the result) lives in
- * the function. This only passes the term through, so the bounds cannot be
- * loosened from the browser.
+ * on profiles at all. Every bound (exact match on email and username, a three
+ * character floor, ten results, no email in the result) lives in the function.
+ * This only passes the term through, so the bounds cannot be loosened from the
+ * browser.
  */
 export async function findColleagues(query: string): Promise<ColleagueSearchResult[]> {
   const term = query.trim();

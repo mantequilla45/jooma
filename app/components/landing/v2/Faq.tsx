@@ -32,7 +32,7 @@ export default function Faq() {
     },
     {
       q: "Can I share resources with colleagues?",
-      a: "Yes. Add colleagues by name, username or email, then share any resource straight to their library. They get their own copy to edit, and yours stays untouched. Most schools end up with a shared bank of resources built by the people who teach there.",
+      a: "Yes. Add colleagues by username or email, then share any resource straight to their library. They get their own copy to edit, and yours stays untouched. Most schools end up with a shared bank of resources built by the people who teach there.",
     },
     {
       q: "Can I edit what it makes?",

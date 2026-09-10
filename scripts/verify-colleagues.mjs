@@ -383,8 +383,11 @@ async function run() {
   }
 
   {
+    // The point of dropping the name branches: a surname must not walk the
+    // staffroom. See 20260912000000.
     const { data } = await alice.rpc("find_colleagues", { q: "Testers" });
-    check("a name prefix is found", (data ?? []).length > 0);
+    check("a name prefix finds nobody", (data ?? []).length === 0,
+      "A NAME PREFIX MATCHED. find_colleagues is still enumerable by name.");
   }
 
   {

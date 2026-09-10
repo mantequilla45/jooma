@@ -82,8 +82,14 @@ test.describe("Colleagues", () => {
     await search.fill("bo");
     await expect(page.getByText("Bob Testcase")).toHaveCount(0);
 
-    // Surname prefix.
+    // A surname finds nobody. Names stopped being searchable in
+    // 20260912000000: a prefix match on a name is an enumeration of real
+    // teachers, so discovery needs an identifier the searcher already holds.
     await search.fill("Testca");
+    await expect(page.getByText("Bob Testcase")).toHaveCount(0);
+
+    // An exact email still finds him, and the row still names him.
+    await search.fill(bob.email);
     await expect(page.getByText("Bob Testcase")).toBeVisible();
   });
 
