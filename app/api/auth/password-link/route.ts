@@ -8,8 +8,9 @@
 //
 // Both mint a Supabase recovery link and mail it through SendGrid, exactly as
 // app/api/admin/teachers/reset-password/route.ts does on an admin's behalf. The
-// link lands on /auth/callback, which exchanges the code and forwards to
-// /create-password with a live session.
+// link lands on /create-password carrying a hashed token, which that page
+// redeems for a session. See the note above generateLink() for why it cannot be
+// Supabase's own action_link.
 //
 // (2) goes through an emailed link rather than a form on the profile page on
 // purpose. A password is a second way into the account; letting a live session
@@ -161,16 +162,39 @@ export async function POST(req: Request) {
   // email goes out through SendGrid with our template rather than Supabase's.
   // It fails for an address with no account, which is the "no such user" branch
   // — and is why nothing below changes the response.
+  //
+  // We send the hashed token, NOT Supabase's own action_link.
+  //
+  // Following action_link makes Supabase mint the session itself and hand it
+  // back in the URL FRAGMENT (#access_token=...). That cannot work here:
+  // @supabase/ssr hardcodes flowType "pkce" (see its createBrowserClient), and
+  // a PKCE client only ever looks for a ?code= to exchange. It ignores an
+  // implicit-flow fragment entirely, so no session is created, no cookie is
+  // written, and /create-password reports "your session expired".
+  //
+  // generateLink cannot mint a PKCE link either: PKCE needs a verifier created
+  // by the browser at request time, and this is a server-side admin call with
+  // no browser in sight. So no redirect target fixes this, /auth/callback
+  // included.
+  //
+  // What does work is the hashed token, which generateLink returns alongside
+  // the link. Handed to the page as an ordinary query parameter, the browser
+  // client redeems it with verifyOtp() and gets a real cookie-backed session.
+  // Query string rather than fragment on purpose: a fragment never reaches the
+  // server, and this one has to survive the proxy.
   const { data: link, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
     type: "recovery",
     email,
-    options: { redirectTo: `${siteUrl()}/auth/callback?next=/create-password` },
+    options: { redirectTo: `${siteUrl()}/create-password` },
   });
 
-  if (linkError || !link?.properties?.action_link) {
+  if (linkError || !link?.properties?.hashed_token) {
     console.warn("[password-link] no link generated", { email, error: linkError?.message });
     return ok();
   }
+  const resetUrl =
+    `${siteUrl()}/create-password` +
+    `?token_hash=${encodeURIComponent(link.properties.hashed_token)}&type=recovery`;
 
   // Greet them by name where we have one. generateLink returns the auth user,
   // so the profile lookup is by id rather than a second lookup by address.
@@ -180,7 +204,7 @@ export async function POST(req: Request) {
     : { data: null };
 
   const sent = await sendTemplate("password_reset", email, {
-    resetUrl: link.properties.action_link,
+    resetUrl,
     firstName: profile?.first_name ?? "",
   });
 

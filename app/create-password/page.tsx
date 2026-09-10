@@ -29,13 +29,55 @@ export default function CreatePasswordPage() {
   const [loading, setLoading] = useState(false);
 
   // A live session plus a profile row means an existing teacher arrived through
-  // a recovery link. Read once on mount purely for the copy; handleSubmit does
-  // its own lookup rather than trusting this, because where it sends them
-  // afterwards matters more than a heading does.
+  // a recovery link. Purely for the copy; handleSubmit does its own lookup
+  // rather than trusting this, because where it sends them afterwards matters
+  // more than a heading does.
+  //
+  // Cannot be a single getUser() on mount. A recovery link arrives with no
+  // session at all until redeem() below has exchanged its token, so on the first
+  // pass getUser() returns null and `returning` would stick at false. The
+  // teacher resetting a password of two years' standing would be greeted with
+  // "Create your password. One more step and your account is ready." So also
+  // listen for the session arriving: onAuthStateChange fires once the token has
+  // been redeemed, and re-resolves the copy.
   useEffect(() => {
     let cancelled = false;
-    void (async () => {
-      const supabase = createClient();
+    const supabase = createClient();
+
+    // Redeem the recovery token first, if one is in the URL.
+    //
+    // The emailed link carries `?token_hash=...&type=recovery` rather than
+    // Supabase's own action_link. Following action_link would leave the session
+    // in the URL fragment, and @supabase/ssr hardcodes flowType "pkce", so its
+    // client only ever looks for a ?code= to exchange and ignores an
+    // implicit-flow fragment completely. Nothing consumed it, no cookie was
+    // written, and this page reported "your session expired" to every teacher
+    // who used the link while signed out. (Anyone already signed in never
+    // noticed: their existing cookie carried them through.)
+    //
+    // verifyOtp() redeems the hashed token directly and writes a real
+    // cookie-backed session, which is what the rest of this page expects.
+    const redeem = async () => {
+      const params = new URLSearchParams(window.location.search);
+      const tokenHash = params.get("token_hash");
+      if (!tokenHash) return;
+      const { error } = await supabase.auth.verifyOtp({
+        token_hash: tokenHash,
+        type: "recovery",
+      });
+      if (cancelled) return;
+      if (error) {
+        // Single-use and short-lived, so the common cause is a link that has
+        // already been followed or has simply aged out.
+        setError("That reset link has expired or has already been used. Please request a new one.");
+        return;
+      }
+      // Strip the token so a refresh cannot try to redeem it a second time and
+      // report the failure above for a reset that actually worked.
+      window.history.replaceState(null, "", window.location.pathname);
+    };
+
+    const resolve = async () => {
       const {
         data: { user },
       } = await supabase.auth.getUser();
@@ -50,9 +92,22 @@ export default function CreatePasswordPage() {
         .eq("id", user.id)
         .maybeSingle();
       if (!cancelled) setReturning(Boolean(profile));
-    })();
+    };
+
+    // Redeem before the first resolve, so the copy is decided against the
+    // session the token creates rather than against no session at all.
+    void redeem().then(() => {
+      if (!cancelled) void resolve();
+    });
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(() => {
+      void resolve();
+    });
+
     return () => {
       cancelled = true;
+      subscription.unsubscribe();
     };
   }, []);
 
@@ -77,13 +132,13 @@ export default function CreatePasswordPage() {
     } = await supabase.auth.getUser();
 
     if (user) {
-      // Already signed in: a recovery link landed here through
-      // /auth/callback?next=/create-password with a live session. Three things
-      // send someone down this branch — an admin reset from the Teachers
-      // drawer, a teacher who used /forgot-password, and a Google teacher
-      // adding a password from /profile.
+      // Already signed in: a recovery link lands here directly with a live
+      // session, which the Supabase browser client reads out of the URL
+      // fragment. Three things send someone down this branch: an admin reset
+      // from the Teachers drawer, a teacher who used /forgot-password, and a
+      // Google teacher adding a password from /profile.
       //
-      // (Google SIGN-UPS still never reach this page; the callback sends those
+      // (Google SIGN-UPS still never reach this page; /auth/callback sends those
       // straight to /complete-profile. A Google teacher adding a password later
       // is a different person at a different point in their life.)
       const { error } = await supabase.auth.updateUser({ password });

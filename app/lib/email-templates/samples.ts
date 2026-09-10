@@ -24,7 +24,7 @@ export const SAMPLE_PARAMS: Record<EmailTemplateKey, Record<string, string>> = {
   // (/forgot-password, and adding a password to a Google account). All three
   // pass the same two parameters, so one sample covers them.
   password_reset: {
-    resetUrl: "https://jooma.app/auth/callback?type=recovery&token=sample",
+    resetUrl: "https://jooma.app/create-password?token_hash=sample&type=recovery",
     firstName: "Priya",
   },
 
