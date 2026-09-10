@@ -1,3 +1,14 @@
+import type { Metadata } from "next";
+
+/* Without this the page inherited the root layout's title and description, so
+ * it announced itself as the home page. The canonical is the same apex/www
+ * point as everywhere else: relative, resolved against metadataBase. */
+export const metadata: Metadata = {
+  title: "Terms of Service | Jooma",
+  description: "The terms you agree to when you use Jooma.",
+  alternates: { canonical: "/terms" },
+};
+
 export default function TermsPage() {
   return (
     <div className="min-h-screen" style={{ backgroundColor: "var(--j-tint)" }}>
