@@ -1,3 +1,13 @@
+import type { Metadata } from "next";
+
+/* See the note in app/terms/page.tsx: same inherited-title problem, same
+ * canonical reasoning. */
+export const metadata: Metadata = {
+  title: "Privacy Policy | Jooma",
+  description: "What data Jooma collects, why, and what you can ask us to do with it.",
+  alternates: { canonical: "/privacy" },
+};
+
 export default function PrivacyPage() {
   return (
     <div className="min-h-screen" style={{ backgroundColor: "var(--j-tint)" }}>

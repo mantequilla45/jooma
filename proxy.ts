@@ -78,6 +78,15 @@ const PUBLIC_PATHS = [
   // silently unprotect any HTML asset added later. It must stay reachable for
   // as long as the property is verified, not just until it succeeds.
   "/googleeff60eae5378a4ab.html",
+  // Same trap as the verification file, and confirmed the same way: both of
+  // these 307'd to /login in production. The matcher below excludes image
+  // extensions and _next, but not .xml or .txt, so every crawler asking for
+  // them got the login page instead.
+  //
+  // This is what Search Console's "Temporary processing error" under Sitemaps
+  // actually was. Not a malformed sitemap, and not a stale one: a redirect.
+  "/sitemap.xml",
+  "/robots.txt",
 ];
 
 function isPublic(pathname: string) {
