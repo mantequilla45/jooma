@@ -72,6 +72,14 @@
   color: var(--j-faint);
 }
 
+/* A value that is a word and a number rather than a figure. The -0.04em on
+   .stat dd is tuned for numerals, where tight tracking reads as confident; on
+   letters at 1.3rem it closes the word-space up and "Level 1" renders as
+   "Level1". Normal tracking here, and the figures beside it keep theirs. */
+.statWord dd {
+  letter-spacing: -0.02em;
+}
+
 /* A figure with no data behind it. Muted and smaller, so it does not read as a
    real number sitting beside the two that are. */
 .statSoon dd {

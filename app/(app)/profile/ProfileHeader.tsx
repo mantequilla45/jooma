@@ -119,7 +119,9 @@ export default function ProfileHeader() {
         {/* Both fall back to the old "not yet" while the badges table is not
             there, which is the honest reading of a feature that has not been
             switched on rather than of a teacher who has not done anything. */}
-        <div className={`${styles.stat} ${!progress.available ? styles.statSoon : ""}`}>
+        <div
+          className={`${styles.stat} ${styles.statWord} ${!progress.available ? styles.statSoon : ""}`}
+        >
           <dt>Level</dt>
           <dd>
             {progress.loading
@@ -129,7 +131,9 @@ export default function ProfileHeader() {
                 : `Level ${progress.level}`}
           </dd>
         </div>
-        <div className={`${styles.stat} ${!progress.available ? styles.statSoon : ""}`}>
+        <div
+          className={`${styles.stat} ${styles.statWord} ${!progress.available ? styles.statSoon : ""}`}
+        >
           <dt>Badges</dt>
           <dd>
             {progress.loading
