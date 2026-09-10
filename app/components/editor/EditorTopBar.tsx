@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { Undo2, Redo2, Download, ArrowLeft, Palette, Check, Play, Pencil, ChevronDown } from "lucide-react";
 import DropdownMenu from "@/app/components/ui/DropdownMenu";
+import Wordmark from "@/app/components/v2/Wordmark";
 import { SLIDESHOW_THEMES, THEME_CATEGORIES, getThemesByCategory, ART_STYLES, getThemeArt, type ArtStyleId } from "@/app/lib/slideshowThemes";
 
 interface Props {
@@ -75,9 +76,12 @@ export default function EditorTopBar({
         >
           <ArrowLeft className="w-4 h-4" />
         </Link>
-        <Link href="/tools/slideshow" className="hover:opacity-70 transition-opacity">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo/logo-v2.svg" alt="Jooma" style={{ height: 22, width: "auto" }} />
+        <Link
+          href="/tools/slideshow"
+          className="hover:opacity-70 transition-opacity"
+          style={{ color: "var(--j-purple)" }}
+        >
+          <Wordmark height={22} />
         </Link>
         <span className="text-gray-400">/</span>
         <input

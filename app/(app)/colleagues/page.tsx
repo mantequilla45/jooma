@@ -272,7 +272,7 @@ export default function ColleaguesPage() {
               className={app.searchInput}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Find a colleague by name, username or email"
+              placeholder="Find a colleague by username or email"
             />
           </label>
           <button
@@ -324,7 +324,7 @@ export default function ColleaguesPage() {
                   </span>
                   <p className={app.emptyTitle}>No colleagues yet</p>
                   <p className={app.emptyBody}>
-                    Find someone by name, username or email, or invite them. You will be able
+                    Find someone by username or email, or invite them. You will be able
                     to share resources straight into each other&rsquo;s libraries.
                   </p>
                 </div>
@@ -574,8 +574,8 @@ function SearchPanel({
           </span>
           <p className={app.emptyTitle}>Nobody found</p>
           <p className={app.emptyBody}>
-            Names match from the start, so try a surname. Usernames and email addresses have
-            to be exact. If they are not on Jooma yet, invite them.
+            Usernames and email addresses have to be exact, so check the spelling. If they
+            are not on Jooma yet, invite them.
           </p>
         </div>
       ) : (

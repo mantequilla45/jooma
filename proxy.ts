@@ -70,6 +70,14 @@ const PUBLIC_PATHS = [
   // Stripe calls this server-to-server with no session; it verifies its own
   // signature, so it must bypass the auth redirect.
   "/api/stripe/webhook",
+  // Google Search Console's ownership proof. Googlebot fetches this signed
+  // out, and the matcher below excludes images and _next but NOT .html, so
+  // without this entry the file 307s to /login and verification fails.
+  //
+  // Named exactly rather than exempting .html wholesale: a blanket rule would
+  // silently unprotect any HTML asset added later. It must stay reachable for
+  // as long as the property is verified, not just until it succeeds.
+  "/googleeff60eae5378a4ab.html",
 ];
 
 function isPublic(pathname: string) {
