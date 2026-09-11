@@ -1,0 +1,273 @@
+/* The plan card, shared by the landing page, /welcome and the profile's
+   subscription section. Lifted from the landing page's Pricing.module.css,
+   which was the only good-looking one of the three.
+
+   Self-contained on purpose: the landing version leaned on landing.module.css
+   for the button and tick styles, which would drag the whole marketing
+   stylesheet into the signed-in app. Everything needed is here, built from the
+   same --j-* tokens, which are global on :root. */
+
+.grid {
+  display: grid;
+  gap: 16px;
+  align-items: stretch;
+  /* Columns are the caller's business: four on the landing page, three on
+     /welcome and in the profile. Set via the `columns` prop. */
+  grid-template-columns: repeat(var(--plan-columns, 3), minmax(0, 1fr));
+}
+
+@media (max-width: 1000px) {
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.card {
+  background: var(--j-card);
+  border: 1px solid var(--j-line);
+  border-radius: var(--j-r-xl);
+  /* Side padding scales with the column: 26px is right on the landing page's
+     1200px shell and eats a sixth of the width in the app's narrower panel,
+     where it wrapped every feature line in two. clamp keeps the roomy look
+     where there is room for it. */
+  padding: 30px clamp(18px, 4.5%, 26px);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  /* Position context for the current-plan ring below. */
+  position: relative;
+}
+
+/* The purple, most-prominent card. */
+.featured {
+  background: var(--j-purple);
+  border-color: var(--j-purple);
+  box-shadow: 0 30px 60px -34px rgba(91, 46, 214, 0.8);
+}
+
+.featured .name,
+.featured .price {
+  color: #fff;
+}
+
+.featured .features li {
+  color: #ede7fb;
+}
+
+.featured .per {
+  color: var(--j-lilac);
+}
+
+/* The tick is purple on white, which would vanish on the purple card. */
+.featured .features li > span {
+  color: var(--j-lilac);
+}
+
+/* The plan they are on. A ring rather than a fill, so it reads as "you are
+   here" without competing with the featured card for attention. */
+.current {
+  border-color: var(--j-purple);
+  box-shadow: 0 0 0 1px var(--j-purple);
+}
+
+/* Compact: for the narrower panel on /welcome, where the full 30px padding and
+   2.2rem price crowd a three-column grid inside a card. */
+.compact {
+  padding: 20px 18px;
+  border-radius: var(--j-r-lg);
+}
+
+.compact .price {
+  font-size: 1.7rem;
+}
+
+.compact .features {
+  margin: 16px 0 18px;
+}
+
+.compact .features li {
+  font-size: 0.85rem;
+  padding: 4px 0;
+}
+
+.compact .action {
+  padding: 11px;
+  font-size: 0.88rem;
+}
+
+.badgeRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  /* Holds the row's height whether or not this card has a badge, so the plan
+     names line up across the grid. */
+  min-height: 24px;
+}
+
+.badge {
+  align-self: flex-start;
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  padding: 5px 11px;
+  border-radius: var(--j-pill);
+}
+
+/* On a white card the translucent white pill is invisible, so the same badge
+   takes the tinted treatment instead. */
+.card:not(.featured) .badge {
+  background: var(--j-tint);
+  color: var(--j-purple);
+}
+
+.name {
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  margin-bottom: 12px;
+  color: var(--j-ink);
+}
+
+.price {
+  font-size: 2.2rem;
+  font-weight: 800;
+  color: var(--j-ink);
+  letter-spacing: -0.045em;
+  line-height: 1;
+}
+
+/* Reserved height so the cards' feature lists start on the same line whether or
+   not a plan has a second pricing line. */
+.per {
+  font-size: 0.85rem;
+  color: var(--j-muted);
+  margin-top: 7px;
+  min-height: 22px;
+}
+
+.features {
+  list-style: none;
+  margin: 22px 0 24px;
+  padding: 0;
+  /* Takes the slack so the action button pins to the bottom. */
+  flex: 1;
+}
+
+.features li {
+  font-size: 0.92rem;
+  display: flex;
+  gap: 10px;
+  padding: 6px 0;
+  color: var(--j-body);
+}
+
+.tick {
+  color: var(--j-purple);
+  font-weight: 800;
+  flex: none;
+}
+
+/* margin-top:auto pins every button to the bottom, so cards with different
+   numbers of features still line up. */
+.action {
+  width: 100%;
+  margin-top: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 13px;
+  font-size: 0.92rem;
+  font-weight: 800;
+  font-family: inherit;
+  border-radius: var(--j-pill);
+  border: 0;
+  cursor: pointer;
+  text-decoration: none;
+  transition:
+    transform 0.18s var(--j-ease),
+    background 0.18s,
+    box-shadow 0.22s;
+}
+
+/* Grey/outline CTA, for white cards. */
+.actionGrey {
+  background: var(--j-card);
+  color: var(--j-ink);
+  border: 1px solid var(--j-line-2);
+}
+
+.actionGrey:hover:not(:disabled) {
+  border-color: var(--j-lilac-2);
+  transform: translateY(-2px);
+}
+
+/* White CTA, for the purple featured card. */
+.actionWhite {
+  background: #fff;
+  color: var(--j-deep);
+}
+
+.actionWhite:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+/* Solid purple, for the primary action on a white card in the app. */
+.actionPurple {
+  background: var(--j-purple);
+  color: #fff;
+}
+
+.actionPurple:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+.action:disabled {
+  opacity: 0.65;
+  cursor: default;
+  transform: none;
+}
+
+/* The current plan's button is not a call to action, it is a label. Flat, no
+   hover, no pointer. */
+.actionCurrent {
+  background: var(--j-tint);
+  color: var(--j-purple);
+  border: 0;
+  cursor: default;
+  opacity: 1;
+}
+
+.actionCurrent:disabled {
+  opacity: 1;
+}
+
+/* Holds a caller-supplied action (the plan-change buttons, which expand into a
+   confirmation panel). Pinned to the bottom like a button, so cards with
+   different numbers of features still line up. */
+.custom {
+  margin-top: auto;
+}
+
+/* A note under the button: "Changing to Pro on 3 October", and the undo. */
+.foot {
+  margin-top: 12px;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--j-muted);
+  text-align: center;
+}
+
+.featured .foot {
+  color: var(--j-lilac);
+}

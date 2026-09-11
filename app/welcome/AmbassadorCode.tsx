@@ -2,6 +2,14 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import PlanCard, { PlanCardGrid } from "@/app/components/plans/PlanCard";
+import {
+  planCardCta,
+  planCardName,
+  planCardPer,
+  planCardPrice,
+  planFeatures,
+} from "@/app/lib/plan-copy";
 import styles from "./ambassador.module.css";
 
 /*
@@ -29,26 +37,14 @@ type Checked =
   | { state: "good"; code: string; offer: string | null }
   | { state: "bad"; message: string };
 
-const PLANS = [
-  {
-    id: "free" as const,
-    name: "Free",
-    price: "£0",
-    blurb: "1 a day, 5 a month.",
-  },
-  {
-    id: "pro" as const,
-    name: "Pro",
-    price: "£7.99",
-    blurb: "Unlimited resources and the assistant.",
-  },
-  {
-    id: "max" as const,
-    name: "Max",
-    price: "£14.99",
-    blurb: "Everything in Pro, with more of it.",
-  },
-];
+/** The plans offered here, cheapest first. Every figure and line of copy comes
+ *  from lib/plan-copy, which derives them from PLANS and the spend ceiling —
+ *  these were once hardcoded as "£7.99" and "£14.99" and could silently drift
+ *  from what Stripe actually charges. */
+const OFFERED = ["free", "pro", "max"] as const;
+
+/** The plan most people should buy: the purple card with the badge. */
+const FEATURED = "pro";
 
 /** A code stashed earlier in the funnel by /signup?code=JAMIE20. Returns "" on
  *  the server, where there is no sessionStorage to read. */
@@ -229,27 +225,26 @@ export default function AmbassadorCode({ initialCode }: { initialCode?: string }
       )}
       {checked.state === "bad" && <p className={styles.bad}>{checked.message}</p>}
 
-      <div className={styles.plans}>
-        {PLANS.map((plan) => (
-          <button
-            key={plan.id}
-            type="button"
-            className={styles.plan}
-            onClick={() => choose(plan.id)}
-            disabled={busy !== null}
-          >
-            <span className={styles.planName}>{plan.name}</span>
-            <span className={styles.planPrice}>
-              {plan.price}
-              {plan.id !== "free" && <span className={styles.planPer}> a month</span>}
-            </span>
-            <span className={styles.planBlurb}>{plan.blurb}</span>
-            <span className={styles.planGo}>
-              {busy === plan.id ? "Just a moment…" : plan.id === "free" ? "Start free" : "Choose"}
-            </span>
-          </button>
+      <PlanCardGrid columns={OFFERED.length} className={styles.plans}>
+        {OFFERED.map((id) => (
+          <PlanCard
+            key={id}
+            compact
+            name={planCardName(id)}
+            price={planCardPrice(id)}
+            per={planCardPer(id)}
+            features={planFeatures(id)}
+            featured={id === FEATURED}
+            badge={id === FEATURED ? "Most popular" : undefined}
+            action={{
+              kind: "button",
+              label: busy === id ? "Just a moment…" : planCardCta(id),
+              onClick: () => choose(id),
+              disabled: busy !== null,
+            }}
+          />
         ))}
-      </div>
+      </PlanCardGrid>
 
       <p className={styles.note}>
         You can start free and subscribe later. Your code stays on your account either way.

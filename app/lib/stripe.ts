@@ -190,3 +190,67 @@ export async function planForPriceId(
 
   return null;
 }
+
+/** A plan change that Stripe is holding until the period ends. */
+export interface PendingPlanChange {
+  /** The plan that starts at `at`. */
+  plan: PlanId;
+  /** ISO timestamp the new plan takes effect — the current period's end. */
+  at: string;
+  /** The schedule to release if they change their mind. */
+  scheduleId: string;
+}
+
+/**
+ * The downgrade a subscriber has scheduled, if any.
+ *
+ * A downgrade is not applied immediately (see app/api/stripe/downgrade), it is
+ * parked on a Stripe subscription SCHEDULE whose second phase starts at the
+ * renewal date. That state lives only in Stripe: nothing on `profiles` records
+ * it, deliberately, because the teacher is still fully on their current plan
+ * until it lands and every existing column should keep saying so.
+ *
+ * So the billing page reads it back through here at render time. Returns null
+ * when there is no schedule, when the schedule has only the current phase, or
+ * when anything at all goes wrong — a Stripe hiccup must degrade to "no pending
+ * change" rather than breaking a page whose main job is showing the plan they
+ * already have.
+ */
+export async function pendingPlanChange(
+  subscriptionId: string | null | undefined,
+): Promise<PendingPlanChange | null> {
+  if (!subscriptionId) return null;
+
+  try {
+    const sub = await stripe.subscriptions.retrieve(subscriptionId, {
+      expand: ["schedule"],
+    });
+
+    const schedule = sub.schedule;
+    // Not expanded into an object, or no schedule attached at all.
+    if (!schedule || typeof schedule === "string") return null;
+    // A released or cancelled schedule is no longer going to do anything.
+    if (schedule.status !== "active" && schedule.status !== "not_started") return null;
+
+    // Phase 0 is the period they are in now; the change is phase 1.
+    const upcoming = schedule.phases?.[1];
+    if (!upcoming) return null;
+
+    const priceId =
+      typeof upcoming.items?.[0]?.price === "string"
+        ? upcoming.items[0].price
+        : upcoming.items?.[0]?.price?.id;
+
+    const plan = await planForPriceId(priceId);
+    if (!plan) return null;
+
+    return {
+      plan,
+      at: new Date(upcoming.start_date * 1000).toISOString(),
+      scheduleId: schedule.id,
+    };
+  } catch (err) {
+    console.error("[stripe] pendingPlanChange lookup failed", err);
+    return null;
+  }
+}

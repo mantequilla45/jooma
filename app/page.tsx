@@ -2,7 +2,13 @@ import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { createClient } from "@/app/lib/auth/server";
 import { getCopy } from "@/app/lib/copy";
-import { PLANS, planCredits } from "@/app/lib/plans";
+import {
+  planCardCta,
+  planCardName,
+  planCardPer,
+  planCardPrice,
+  planFeatures,
+} from "@/app/lib/plan-copy";
 
 import { SquircleDefs } from "@/app/components/v2/Squircle";
 import LandingNav from "@/app/components/landing/v2/LandingNav";
@@ -17,7 +23,7 @@ import {
 import Staffroom from "@/app/components/landing/v2/Staffroom";
 import ToolsGrid from "@/app/components/landing/v2/ToolsGrid";
 import ValueBand from "@/app/components/landing/v2/ValueBand";
-import Pricing, { type PlanCard } from "@/app/components/landing/v2/Pricing";
+import Pricing, { type PricingPlan } from "@/app/components/landing/v2/Pricing";
 import Faq from "@/app/components/landing/v2/Faq";
 import ClosingCta from "@/app/components/landing/v2/ClosingCta";
 import SiteFooter from "@/app/components/landing/v2/SiteFooter";
@@ -46,67 +52,25 @@ export const metadata: Metadata = {
  * built, so quoting a per teacher figure would be selling something that
  * cannot be bought. It is an enquiry card.
  */
-function pricingPlans(): PlanCard[] {
-  const proCredits = planCredits("pro")?.toLocaleString("en-GB") ?? "1,000";
-  const maxCredits = planCredits("max")?.toLocaleString("en-GB") ?? "2,500";
+function pricingPlans(): PricingPlan[] {
+  // Names, prices, the per line and the feature lists all come from
+  // lib/plan-copy, which derives every figure from PLANS and the spend ceiling.
+  // They used to be written out here as well as in two other places, and
+  // /welcome still had "£7.99" typed as a literal string.
+  const card = (id: "free" | "pro" | "max" | "school") => ({
+    id,
+    name: planCardName(id),
+    price: planCardPrice(id),
+    per: planCardPer(id),
+    features: planFeatures(id),
+    cta: planCardCta(id),
+  });
 
   return [
-    {
-      id: "free",
-      name: "Free",
-      price: "£0",
-      per: "Forever",
-      features: [
-        "5 resources a month, 1 a day",
-        "Every tool, nothing locked",
-        "Watermarked exports",
-        "No card needed",
-      ],
-      cta: "Start free",
-      href: "/signup",
-    },
-    {
-      id: "pro",
-      name: "Pro",
-      price: `£${PLANS.pro.priceMonthly?.toFixed(2)}`,
-      per: "a month",
-      features: [
-        `${proCredits} credits a month`,
-        "Full curriculum alignment",
-        "Clean exports, no watermark",
-        "Refining is always free",
-        "Top up any time",
-      ],
-      cta: "Go Pro",
-      featured: true,
-      checkout: "pro",
-    },
-    {
-      id: "max",
-      name: "Max",
-      price: `£${PLANS.max.priceMonthly?.toFixed(2)}`,
-      per: "a month",
-      features: [
-        `${maxCredits} credits a month`,
-        "Priority building",
-        "Everything in Pro",
-      ],
-      cta: "Choose Max",
-      checkout: "max",
-    },
-    {
-      id: "school",
-      name: "Schools",
-      price: "Talk to us",
-      per: "Priced by size",
-      features: [
-        "Credits pooled across staff",
-        "Admin dashboard and usage",
-        "One invoice, one renewal",
-      ],
-      cta: "Talk to us",
-      href: "/contact?type=school",
-    },
+    { ...card("free"), href: "/signup" },
+    { ...card("pro"), featured: true, checkout: "pro" as const },
+    { ...card("max"), checkout: "max" as const },
+    { ...card("school"), href: "/contact?type=school" },
   ];
 }
 

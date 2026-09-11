@@ -17,11 +17,25 @@ import { PLANS, planCredits, type PlanId } from "@/app/lib/plans";
 // so the sentence a teacher reads cannot drift from the ceiling actually
 // enforced. See the note above PENCE_PER_CREDIT in lib/plans.ts.
 
-export default function UpgradeButton({ to }: { to: PlanId }) {
+export default function UpgradeButton({
+  to,
+  onClose,
+}: {
+  to: PlanId;
+  /** When given, the panel is always open and this dismisses it — the plan
+   *  cards own that state so the panel can render full width below the grid
+   *  rather than squeezed into a ~200px card column. Without it the component
+   *  keeps its own collapsed button, as it always had. */
+  onClose?: () => void;
+}) {
   const router = useRouter();
   const [confirming, setConfirming] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Controlled by the parent when onClose is supplied, self-managed otherwise.
+  const open = onClose ? true : confirming;
+  const dismiss = onClose ?? (() => setConfirming(false));
 
   const plan = PLANS[to];
   const credits = planCredits(to);
@@ -42,7 +56,7 @@ export default function UpgradeButton({ to }: { to: PlanId }) {
         // The plan is written by the webhook, which lands a moment after this
         // returns, so refresh rather than claiming the new plan outright. The
         // page's existing "activating your plan" banner covers the gap.
-        setConfirming(false);
+        dismiss();
         router.refresh();
         return;
       }
@@ -54,7 +68,7 @@ export default function UpgradeButton({ to }: { to: PlanId }) {
     }
   }
 
-  if (!confirming) {
+  if (!open) {
     return (
       <div>
         <button
@@ -107,8 +121,8 @@ export default function UpgradeButton({ to }: { to: PlanId }) {
         <button
           type="button"
           onClick={() => {
-            setConfirming(false);
             setError(null);
+            dismiss();
           }}
           disabled={loading}
           className="inline-block py-2.5 px-5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-90 disabled:opacity-60 cursor-pointer"
