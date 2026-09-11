@@ -301,6 +301,31 @@ export function nextPlanUp(plan: PlanId): PlanId | null {
   return ladder.find((id) => (PLANS[id].priceMonthly ?? 0) > price) ?? null;
 }
 
+/**
+ * The next PAID plan down from this one, or null when there isn't one.
+ *
+ * The mirror of nextPlanUp, and derived the same way so the ladder follows
+ * PLANS rather than a hardcoded "max means pro".
+ *
+ * Returns null for Pro, and that is not an oversight. Free has no price to swap
+ * to — dropping to Free means CANCELLING the subscription and letting it lapse
+ * at period end, which is a different mechanism entirely (the portal's
+ * subscription_cancel flow, then the webhook writing DEFAULT_PLAN when Stripe
+ * finally closes it). Returning "free" here would invite a caller to hand it to
+ * /api/stripe/downgrade, where priceIdFor() would throw. The paid ladder and
+ * the exit are deliberately separate.
+ */
+export function nextPlanDown(plan: PlanId): PlanId | null {
+  const ladder = PRICEABLE_PLAN_IDS.slice().sort(
+    // Descending, so the first match below the current price is the NEAREST one
+    // rather than the cheapest.
+    (a, b) => (PLANS[b].priceMonthly ?? 0) - (PLANS[a].priceMonthly ?? 0),
+  );
+  const price = PLANS[plan].priceMonthly;
+  if (price === null) return null;
+  return ladder.find((id) => (PLANS[id].priceMonthly ?? 0) < price) ?? null;
+}
+
 // ── AI spend ceiling ─────────────────────────────────────────────────────────
 /**
  * Monthly ceiling on MEASURED provider AI spend, in pence. `null` = no ceiling.

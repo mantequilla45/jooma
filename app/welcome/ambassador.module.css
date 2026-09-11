@@ -90,72 +90,12 @@
   color: var(--j-danger, #b3261e);
 }
 
+/* Spacing only. The cards themselves are the shared PlanCard (compact
+   variant), which owns their look — this used to carry a whole flat-grey card
+   design of its own that looked nothing like the pricing table on the landing
+   page. The grid template comes from PlanCardGrid. */
 .plans {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
   margin-top: 18px;
-}
-
-@media (max-width: 560px) {
-  .plans {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-.plan {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 14px;
-  text-align: left;
-  font: inherit;
-  background: var(--j-bg);
-  border: 1px solid var(--j-line);
-  border-radius: 12px;
-  cursor: pointer;
-  transition: border-color 0.18s var(--j-ease);
-}
-
-.plan:hover:not(:disabled) {
-  border-color: var(--j-lilac-2);
-}
-
-.plan:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
-.planName {
-  font-size: 14px;
-  font-weight: 800;
-  color: var(--j-ink);
-}
-
-.planPrice {
-  font-size: 18px;
-  font-weight: 800;
-  color: var(--j-ink);
-  letter-spacing: -0.01em;
-}
-
-.planPer {
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--j-muted);
-}
-
-.planBlurb {
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--j-muted);
-}
-
-.planGo {
-  margin-top: 6px;
-  font-size: 13px;
-  font-weight: 800;
-  color: var(--j-purple);
 }
 
 .note {
@@ -163,10 +103,4 @@
   font-size: 12px;
   line-height: 1.5;
   color: var(--j-faint);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .plan {
-    transition: none;
-  }
 }

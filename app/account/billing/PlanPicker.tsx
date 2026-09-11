@@ -2,60 +2,80 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { PLANS, planCredits, type PlanId } from "@/app/lib/plans";
+import PlanCard, { PlanCardGrid, type PlanCardAction } from "@/app/components/plans/PlanCard";
+import {
+  planCardCta,
+  planCardName,
+  planCardPrice,
+  planCardPer,
+  planFeatures,
+} from "@/app/lib/plan-copy";
+import { PLANS, type PlanId } from "@/app/lib/plans";
+import DowngradeButton from "./DowngradeButton";
+import SwitchToFreeButton from "./SwitchToFreeButton";
+import UpgradeButton from "./UpgradeButton";
+import CancelDowngradeButton from "./CancelDowngradeButton";
 
-// The plans a teacher can buy, shown inside the Subscription section.
-//
-// WHY NOT LINK TO /pricing
-// It sends someone who is already signed in, already looking at their plan, out
-// to a marketing page and back. Worse, /pricing predates Max: it renders two
-// hardcoded cards and POSTs to checkout with no body, so it can only ever sell
-// Pro. Someone with an account should be able to see and choose every plan from
-// the page that is about their account.
-//
-// The figures are derived — PLANS for the price, planCredits() for the
-// allowance — so this cannot advertise an allowance the ceiling will not honour.
-// See the note above PENCE_PER_CREDIT in lib/plans.ts.
+/*
+ * Every plan a teacher can be on, and the way to get to each one.
+ *
+ * WHY ALL OF THEM, ALWAYS
+ * This used to render only for people with NO subscription, and only the plans
+ * above them — so a subscriber saw a single "Upgrade" button and a Max
+ * subscriber saw nothing at all. Moving down was invisible: the only route off
+ * Max was the red Cancel button, which reads as quitting rather than switching.
+ * Showing the full ladder with the current rung marked makes every move
+ * available in the same place, in both directions.
+ *
+ * The figures are derived — PLANS for the price, planCredits() via
+ * planFeatures() for the allowance — so a card cannot advertise something the
+ * ceiling will not honour. See the note above PENCE_PER_CREDIT in lib/plans.ts.
+ *
+ * The ACTIONS are all existing components. This decides which one belongs on
+ * which card; each still owns its own confirmation and its own request.
+ */
 
-/** What each plan is worth saying, beyond its price and credit count. The
- *  wording matches plan_config.description and the live pricing page. */
-/** Button label per plan. The card heading already names the plan, so
- *  "Choose Pro Teacher" says it twice. */
-const CTA: Record<string, string> = {
-  pro: "Go Pro",
-  max: "Choose Max",
-};
-
-const HIGHLIGHTS: Record<string, string[]> = {
-  pro: [
-    "Full curriculum alignment",
-    "Clean exports, no watermark",
-    "Refining is always free",
-    "Top up any time",
-  ],
-  max: ["Priority building", "Everything in Pro"],
-};
+/** The plan most people should buy. Carries the badge, and the purple card. */
+const FEATURED: PlanId = "pro";
 
 export default function PlanPicker({
-  /** Plans to offer, cheapest first. Free is never among them. */
+  /** Plans to show, cheapest first, Free included. */
   plans,
-  /** The teacher's current plan, so the card they are on is marked. */
+  /** The plan they are on. */
   current,
+  /** Whether they have a Stripe subscription to change, as opposed to needing
+   *  a fresh checkout. A free teacher who has only bought a top-up has a Stripe
+   *  customer but no subscription, and must go through checkout. */
+  hasSubscription = false,
+  /** A scheduled downgrade, read back from Stripe by the server. */
+  pendingPlan = null,
+  /** When that scheduled change takes effect, already formatted. */
+  pendingAt = null,
+  /** The subscription is cancelling or has ended. Plan changes are hidden:
+   *  renewing comes first, and swapping a plan that is about to stop would
+   *  charge for something disappearing. */
+  locked = false,
 }: {
   plans: PlanId[];
   current: PlanId;
+  hasSubscription?: boolean;
+  pendingPlan?: PlanId | null;
+  pendingAt?: string | null;
+  locked?: boolean;
 }) {
   const [pending, setPending] = useState<PlanId | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** The plan whose confirmation panel is open, below the grid. */
+  const [changing, setChanging] = useState<PlanId | null>(null);
 
   async function subscribe(plan: PlanId) {
     setPending(plan);
     setError(null);
     try {
-      // Checkout, not the upgrade route: this renders for teachers with no
-      // subscription to swap. Someone who already subscribes gets UpgradeButton
-      // on the Overview card instead, which changes their existing plan rather
-      // than starting a second one.
+      // Checkout, not the upgrade route: this path is for teachers with no
+      // subscription to swap. Someone who already subscribes gets the
+      // Upgrade/Downgrade buttons instead, which change the subscription they
+      // have rather than starting a second one.
       const res = await fetch("/api/stripe/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -63,8 +83,8 @@ export default function PlanPicker({
       });
       const data = (await res.json()) as { url?: string; error?: string };
       if (data.url) {
-        // assign(), not `location.href =`: a full navigation to Stripe's
-        // domain either way, but the React compiler reads the property write as
+        // assign(), not `location.href =`: a full navigation to Stripe's domain
+        // either way, but the React compiler reads the property write as
         // mutating a value from outside the component.
         window.location.assign(data.url);
         return;
@@ -77,79 +97,124 @@ export default function PlanPicker({
     setPending(null);
   }
 
+  /**
+   * Which plan move a card offers, if any.
+   *
+   * Kept separate from rendering because a change is CONFIRMED below the grid
+   * rather than inside the card: the confirmation panel carries a list of
+   * consequences and a pair of buttons, and a card column is roughly 200px
+   * wide, which wraps that to two or three words a line. The card starts the
+   * move; the panel underneath explains it with room to be read.
+   */
+  function moveFor(id: PlanId): "buy" | "up" | "down" | "free" | null {
+    if (id === current) return null;
+    // A change is already scheduled. Offering a second one would stack
+    // conflicting schedules, so every other card goes quiet until it is either
+    // cancelled or lands.
+    if (pendingPlan) return null;
+    // Cancelling or ended: renewing comes first. Matches the gate the Overview
+    // card applies to its own buttons.
+    if (locked) return null;
+
+    // Free is not a price to buy, it is where you land when a subscription
+    // lapses. Only reachable from a paid plan, and only by cancelling.
+    if (id === "free") return hasSubscription ? "free" : null;
+
+    // No subscription to change — this is a purchase, not a swap.
+    if (!hasSubscription) return "buy";
+
+    return (PLANS[id].priceMonthly ?? 0) > (PLANS[current].priceMonthly ?? 0)
+      ? "up"
+      : "down";
+  }
+
+  function actionFor(id: PlanId): PlanCardAction {
+    if (id === current) return { kind: "current" };
+
+    const move = moveFor(id);
+    if (!move) return { kind: "none" };
+
+    if (move === "buy") {
+      return {
+        kind: "button",
+        label: pending === id ? "Starting checkout…" : planCardCta(id),
+        onClick: () => subscribe(id),
+        disabled: pending !== null,
+      };
+    }
+
+    // Opens the confirmation panel below the grid. Selecting the card a second
+    // time closes it again, so the button is a toggle rather than a dead end.
+    return {
+      kind: "button",
+      label:
+        move === "free" ? "Switch to Free" : `Switch to ${planCardName(id)}`,
+      onClick: () => setChanging(changing === id ? null : id),
+      disabled: false,
+    };
+  }
+
   return (
     <div className="mt-5">
       <p className="text-sm font-semibold mb-3" style={{ color: "var(--j-ink)" }}>
-        Upgrade your plan
+        {/* "Choose" for someone with nothing yet; "Change" once there is a
+            subscription to move, in either direction. */}
+        {hasSubscription ? "Change your plan" : "Choose your plan"}
       </p>
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <PlanCardGrid columns={plans.length}>
         {plans.map((id) => {
-          const plan = PLANS[id];
-          const credits = planCredits(id);
           const isCurrent = id === current;
+          const isPending = pendingPlan === id;
+
+          // Only the two cards involved in a scheduled change say anything.
+          const footer =
+            isPending && pendingAt ? (
+              <>
+                Starts on {pendingAt}. <CancelDowngradeButton keeping={current} />
+              </>
+            ) : isCurrent && pendingPlan && pendingAt ? (
+              <>Yours until {pendingAt}.</>
+            ) : null;
 
           return (
-            <div
+            <PlanCard
               key={id}
-              className="rounded-2xl p-5 border flex flex-col"
-              style={{
-                backgroundColor: "var(--j-card)",
-                borderColor: isCurrent ? "var(--j-purple)" : "var(--j-line)",
-              }}
-            >
-              <div className="flex items-baseline justify-between mb-1">
-                <p className="text-sm font-bold" style={{ color: "var(--j-ink)" }}>
-                  {plan.name}
-                </p>
-                {isCurrent && (
-                  <span
-                    className="text-[11px] font-semibold px-2 py-0.5 rounded-full"
-                    style={{ backgroundColor: "var(--j-tint)", color: "var(--j-purple)" }}
-                  >
-                    Current
-                  </span>
-                )}
-              </div>
-
-              <p className="mb-3">
-                <span className="text-2xl font-bold" style={{ color: "var(--j-ink)" }}>
-                  £{plan.priceMonthly?.toFixed(2)}
-                </span>
-                <span className="text-sm font-medium" style={{ color: "var(--j-faint)" }}>
-                  {" "}
-                  a month
-                </span>
-              </p>
-
-              <ul className="text-sm space-y-1.5 mb-4 flex-1" style={{ color: "var(--j-body)" }}>
-                {credits !== null && (
-                  <li className="font-medium" style={{ color: "var(--j-ink)" }}>
-                    {credits.toLocaleString("en-GB")} credits a month
-                  </li>
-                )}
-                {(HIGHLIGHTS[id] ?? []).map((line) => (
-                  <li key={line}>{line}</li>
-                ))}
-              </ul>
-
-              <button
-                type="button"
-                onClick={() => subscribe(id)}
-                disabled={pending !== null || isCurrent}
-                className="w-full py-2.5 px-5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
-                style={{ backgroundColor: "var(--j-purple)", color: "#fff" }}
-              >
-                {pending === id
-                  ? "Starting checkout…"
-                  : isCurrent
-                    ? "Your plan"
-                    : (CTA[id] ?? `Choose ${plan.name}`)}
-              </button>
-            </div>
+              name={planCardName(id)}
+              price={planCardPrice(id)}
+              per={planCardPer(id)}
+              features={planFeatures(id)}
+              featured={id === FEATURED}
+              badge={id === FEATURED ? "Most popular" : undefined}
+              current={isCurrent}
+              action={actionFor(id)}
+              footer={footer}
+            />
           );
         })}
-      </div>
+      </PlanCardGrid>
+
+      {/* The confirmation, full width beneath the cards rather than inside the
+          one that was clicked. It carries a list of consequences and a pair of
+          buttons, and a card column is far too narrow to read that in. */}
+      {changing && (
+        <div className="mt-4">
+          {moveFor(changing) === "free" ? (
+            <SwitchToFreeButton
+              from={current}
+              onClose={() => setChanging(null)}
+            />
+          ) : moveFor(changing) === "up" ? (
+            <UpgradeButton to={changing} onClose={() => setChanging(null)} />
+          ) : (
+            <DowngradeButton
+              from={current}
+              to={changing}
+              onClose={() => setChanging(null)}
+            />
+          )}
+        </div>
+      )}
 
       {error && (
         <p className="text-sm mt-3" role="alert" style={{ color: "#c2342b" }}>
