@@ -19,4 +19,4 @@ Always ask before writing a migration or touching the schema. Schema changes go 
 
 # After finishing implementation
 
-Run playwright test at 'localhost', and when you add a feature put its spec in the folder it belongs to at the tests folder. if no folder fits create one. Pure functions go in 'tests/unit'. Run only the specific test script that is relevant to the feature you are working on. If you are adding a new feature, add a test for it. If you are fixing a bug, add a regression test for it. If you are refactoring code, add a test to ensure the refactored code behaves the same as before.
+Run playwright test at 'localhost'. If you are adding a new feature, add a test for it. If you are fixing a bug, add a regression test for it. If you are refactoring code, add a test to ensure the refactored code behaves the same as before. Pure functions go in 'tests/unit'. Run only the specific test script that is relevant to the feature you are working on.
