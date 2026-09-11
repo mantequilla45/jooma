@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { admin, createTeacher, deleteTeacher, type TestTeacher } from "./support/users";
+import { admin, createTeacher, deleteTeacher, type TestTeacher } from "../support/users";
 
 /*
  * Following a real reset link, all the way to the form.

@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { createTeacher, deleteTeacher, signIn, type TestTeacher } from "./support/users";
+import { createTeacher, deleteTeacher, signIn, type TestTeacher } from "../support/users";
 
 /*
  * The CEO's slideshow changes, through the interface.

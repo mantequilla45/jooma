@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { admin, createTeacher, deleteTeacher, signIn, type TestTeacher } from "./support/users";
+import { admin, createTeacher, deleteTeacher, signIn, type TestTeacher } from "../support/users";
 
 /*
  * Does an image added by URL actually survive a reload?

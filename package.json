@@ -13,7 +13,16 @@
     "db:reset": "supabase db reset",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
-    "test:e2e:ui": "playwright test --ui"
+    "test:e2e:ui": "playwright test --ui",
+    "test:unit": "playwright test -c playwright.unit.config.ts",
+    "test:auth": "playwright test tests/auth",
+    "test:billing": "playwright test tests/billing",
+    "test:growth": "playwright test tests/growth",
+    "test:library": "playwright test tests/library",
+    "test:planning": "playwright test tests/planning",
+    "test:profile": "playwright test tests/profile",
+    "test:shell": "playwright test tests/shell",
+    "test:social": "playwright test tests/social"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",

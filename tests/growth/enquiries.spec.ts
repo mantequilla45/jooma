@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { admin, createTeacher, deleteTeacher, signIn, type TestTeacher } from "./support/users";
+import { admin, createTeacher, deleteTeacher, signIn, type TestTeacher } from "../support/users";
 
 /*
  * The contact and school enquiry forms, and where they land.

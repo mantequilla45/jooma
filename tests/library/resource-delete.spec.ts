@@ -7,7 +7,7 @@ import {
   seedResource,
   signIn,
   type TestTeacher,
-} from "./support/users";
+} from "../support/users";
 
 /*
  * Does deleting a resource actually reclaim its storage — and only its storage?

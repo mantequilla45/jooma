@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { createTeacher, deleteTeacher, seedResource, signIn, type TestTeacher } from "./support/users";
+import { createTeacher, deleteTeacher, seedResource, signIn, type TestTeacher } from "../support/users";
 
 /*
  * The V2 audit fixes, through the interface.
