@@ -12,6 +12,9 @@ export const SECTIONS = [
   { id: "badges", label: "Badges" },
   { id: "password", label: "Change password" },
   { id: "ticket", label: "Submit ticket" },
+  // Last, and deliberately so: it is the one entry nobody should reach by
+  // accident on their way to something else.
+  { id: "delete", label: "Delete account" },
 ] as const;
 
 export type Section = (typeof SECTIONS)[number]["id"];

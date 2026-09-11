@@ -156,10 +156,24 @@ function BadgesSkeleton() {
   );
 }
 
+/** Heading, two lines of explanation, one button. Matches the idle state, which
+ *  is what almost every visit to this section renders. */
+export function DeleteAccountSkeleton() {
+  return (
+    <Panel>
+      <Bone className="h-5 w-40 mb-6" />
+      <Bone className="h-4 w-full max-w-md mb-3" />
+      <Bone className="h-4 w-3/4 max-w-sm" />
+      <Bone className="h-11 w-44 rounded-xl mt-6" />
+    </Panel>
+  );
+}
+
 export function SectionSkeleton({ section }: { section: Section }) {
   if (section === "subscription") return <SubscriptionSkeleton />;
   if (section === "badges") return <BadgesSkeleton />;
   if (section === "password") return <ChangePasswordSkeleton />;
   if (section === "ticket") return <SubmitTicketSkeleton />;
+  if (section === "delete") return <DeleteAccountSkeleton />;
   return <PersonalInfoSkeleton />;
 }

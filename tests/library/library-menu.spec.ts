@@ -6,7 +6,7 @@ import {
   seedResource,
   signIn,
   type TestTeacher,
-} from "./support/users";
+} from "../support/users";
 
 /*
  * Can you actually click the Library's "..." menu?

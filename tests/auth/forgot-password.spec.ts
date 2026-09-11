@@ -1,5 +1,5 @@
 import { test, expect, type APIResponse } from "@playwright/test";
-import { admin, createTeacher, deleteTeacher, type TestTeacher } from "./support/users";
+import { admin, createTeacher, deleteTeacher, type TestTeacher } from "../support/users";
 
 /*
  * Forgot password, and the property that matters most about it.

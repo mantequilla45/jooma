@@ -19,6 +19,7 @@ import {
   PenSquare,
   Mail,
   MailQuestionMark,
+  UserMinus,
   Megaphone,
   UsersRound,
   ScrollText,
@@ -93,6 +94,9 @@ const NAV: NavGroup[] = [
       // Contact and school enquiries. Separate from the inbox because a ticket
       // comes from a teacher with an account and an enquiry usually does not.
       { href: "/admin/enquiries", label: "Enquiries", icon: MailQuestionMark },
+      // Who is leaving and why. Under Support rather than Teachers because
+      // "I asked to delete my account and changed my mind" arrives as a ticket.
+      { href: "/admin/deletions", label: "Deletions", icon: UserMinus },
     ],
   },
   {

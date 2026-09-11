@@ -218,3 +218,163 @@ export async function connect(a: TestTeacher, b: TestTeacher): Promise<void> {
   ]);
   if (error) throw new Error(`Could not connect the two teachers: ${error.message}`);
 }
+
+/* ── Acting as a teacher, under RLS ────────────────────────────────────────── */
+
+/**
+ * A Supabase client on the ANON key, which is what a browser holds.
+ *
+ * The point of this is everything `admin` cannot prove. The service role
+ * bypasses RLS, so asserting a teacher "cannot" do something through it passes
+ * no matter how wrong the policies are. Anything about what is FORBIDDEN has to
+ * go through this.
+ *
+ * The key is read when called rather than at module load: every existing spec
+ * imports this file, and throwing at import time would break all of them for
+ * anyone whose .env.local predates this helper.
+ */
+export function anonClient(): SupabaseClient {
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!anon) throw new Error("NEXT_PUBLIC_SUPABASE_ANON_KEY must be set in .env.local for RLS tests.");
+  return createClient(URL, anon, { auth: { persistSession: false } });
+}
+
+/** An anon client already signed in as this teacher, so `auth.uid()` resolves
+ *  and RLS sees a real JWT rather than an anonymous request. */
+export async function asTeacher(teacher: TestTeacher): Promise<SupabaseClient> {
+  const supabase = anonClient();
+  const { error } = await supabase.auth.signInWithPassword({
+    email: teacher.email,
+    password: teacher.password,
+  });
+  if (error) throw new Error(`Could not sign in as ${teacher.firstName}: ${error.message}`);
+  return supabase;
+}
+
+/* ── Timetable fixtures ────────────────────────────────────────────────────── */
+
+/**
+ * The Monday of a given week, as YYYY-MM-DD.
+ *
+ * Not optional politeness: timetable_weeks.week_start carries a CHECK that it
+ * is a Monday (extract(isodow) = 1), so a test that reached for "today" would
+ * fail on six days out of seven.
+ */
+export function mondayOf(date: Date = new Date()): string {
+  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  // getUTCDay() is 0 for Sunday, which is 6 days after the Monday it belongs to
+  // under ISO, not 1 day before the next one.
+  const back = (d.getUTCDay() + 6) % 7;
+  d.setUTCDate(d.getUTCDate() - back);
+  return d.toISOString().slice(0, 10);
+}
+
+export type TimetableDay = "mon" | "tue" | "wed" | "thu" | "fri";
+
+/** The repeating week the wizard would otherwise write. Defaults match the
+ *  migration's own, so a test that does not care about times can ignore them. */
+export async function seedPattern(
+  teacher: TestTeacher,
+  p: {
+    periods?: string[];
+    yearGroup?: string | null;
+    slots?: Array<{ day: TimetableDay; period: number; subject: string }>;
+  } = {},
+): Promise<void> {
+  const { error } = await admin.from("timetable_pattern").upsert(
+    {
+      user_id: teacher.id,
+      periods: p.periods ?? ["9:00", "11:00", "13:15", "14:45"],
+      year_group: p.yearGroup ?? null,
+      slots: p.slots ?? [],
+    },
+    { onConflict: "user_id" },
+  );
+  if (error) throw new Error(`Could not seed a timetable pattern: ${error.message}`);
+}
+
+/** One lesson in one week. Returns its id, for attaching or deleting. */
+export async function seedLesson(
+  teacher: TestTeacher,
+  l: {
+    weekStart: string;
+    day: TimetableDay;
+    period: number;
+    subject: string;
+    topic?: string | null;
+    yearGroup?: string | null;
+    resourceId?: string | null;
+  },
+): Promise<string> {
+  const { data, error } = await admin
+    .from("timetable_lessons")
+    .insert({
+      user_id: teacher.id,
+      week_start: l.weekStart,
+      day: l.day,
+      period: l.period,
+      subject: l.subject,
+      topic: l.topic ?? null,
+      year_group: l.yearGroup ?? null,
+      resource_id: l.resourceId ?? null,
+    })
+    .select()
+    .single();
+  if (error) throw new Error(`Could not seed a lesson: ${error.message}`);
+  return data.id as string;
+}
+
+/** Read a week back through the service role, for asserting what the interface
+ *  actually wrote rather than what it appears to show. */
+export async function listLessons(
+  teacher: TestTeacher,
+  weekStart: string,
+): Promise<Array<Record<string, unknown>>> {
+  const { data, error } = await admin
+    .from("timetable_lessons")
+    .select("*")
+    .eq("user_id", teacher.id)
+    .eq("week_start", weekStart)
+    .order("period");
+  if (error) throw new Error(`Could not read the week back: ${error.message}`);
+  return data ?? [];
+}
+
+/** Whether a week has been materialised. The receipt openWeek writes, and the
+ *  thing Today must never create. */
+export async function weekExists(teacher: TestTeacher, weekStart: string): Promise<boolean> {
+  const { data, error } = await admin
+    .from("timetable_weeks")
+    .select("week_start")
+    .eq("user_id", teacher.id)
+    .eq("week_start", weekStart)
+    .maybeSingle();
+  if (error) throw new Error(`Could not check for a week receipt: ${error.message}`);
+  return data !== null;
+}
+
+/* ── Badge fixtures ────────────────────────────────────────────────────────── */
+
+/**
+ * Put badges on a teacher, for tests about what the profile then SHOWS.
+ *
+ * The service role, because it has to be: user_badges carries a select policy
+ * and nothing else, so there is no insert a teacher could make. That is the
+ * product working as designed, and tests/profile/badges.spec.ts asserts it
+ * directly. Seeding here is the test rig standing in for claim_badges, not a
+ * path anything in the app can take.
+ */
+export async function grantBadges(
+  teacher: TestTeacher,
+  badgeIds: string[],
+  earnedAt?: string,
+): Promise<void> {
+  const { error } = await admin.from("user_badges").insert(
+    badgeIds.map((badge_id) => ({
+      user_id: teacher.id,
+      badge_id,
+      ...(earnedAt ? { earned_at: earnedAt } : {}),
+    })),
+  );
+  if (error) throw new Error(`Could not grant badges: ${error.message}`);
+}

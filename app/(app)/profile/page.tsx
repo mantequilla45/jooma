@@ -13,6 +13,7 @@ import SubscriptionSection from "./SubscriptionSection";
 import BadgesSection from "./BadgesSection";
 import ChangePasswordSection from "./ChangePasswordSection";
 import SubmitTicketSection from "./SubmitTicketSection";
+import DeleteAccountSection from "./DeleteAccountSection";
 
 // Profile — everything about the account, in one place.
 //
@@ -73,6 +74,7 @@ export default async function ProfilePage({
             {section === "badges" && <BadgesSection />}
             {section === "password" && <ChangePasswordSection />}
             {section === "ticket" && <SubmitTicketSection />}
+            {section === "delete" && <DeleteAccountSection />}
           </Suspense>
         </div>
       </div>

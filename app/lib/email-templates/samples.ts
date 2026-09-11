@@ -51,4 +51,20 @@ export const SAMPLE_PARAMS: Record<EmailTemplateKey, Record<string, string>> = {
     reference: "EN-1042",
     replyTo: "info@jooma.ai",
   },
+
+  // app/api/account/deletion/route.ts. The date is pre-formatted by the caller
+  // rather than passed as an ISO string, so the sample is too: a preview that
+  // rendered "2026-10-13T00:00:00.000Z" would not show what lands in a mailbox.
+  account_deletion_scheduled: {
+    scheduledDate: "13 October 2026",
+  },
+
+  // app/api/cron/process-deletions/route.ts, three days before the deadline.
+  account_deletion_reminder: {
+    scheduledDate: "13 October 2026",
+  },
+
+  // app/api/cron/process-deletions/route.ts, once the deletion has run. Takes
+  // no parameters: by this point there is no account left to say anything about.
+  account_deleted: {},
 };

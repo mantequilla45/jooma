@@ -6,7 +6,7 @@ import {
   deleteTeacher,
   signIn,
   type TestTeacher,
-} from "./support/users";
+} from "../support/users";
 
 /*
  * Ambassadors: who brought a teacher in, and who is owed for it.

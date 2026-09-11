@@ -7,7 +7,7 @@ import {
   seedResource,
   signIn,
   type TestTeacher,
-} from "./support/users";
+} from "../support/users";
 
 /*
  * Colleagues, through the interface.

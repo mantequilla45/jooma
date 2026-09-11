@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { monthlyValue, totalMonthly, type ValuableSubscription } from "../app/lib/subscriptionValue";
+import { monthlyValue, totalMonthly, type ValuableSubscription } from "@/app/lib/subscriptionValue";
 
 /*
  * What a subscription is really worth per month.

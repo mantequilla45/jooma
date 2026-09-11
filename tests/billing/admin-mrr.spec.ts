@@ -6,7 +6,7 @@ import {
   setPlan,
   signIn,
   type TestTeacher,
-} from "./support/users";
+} from "../support/users";
 
 /*
  * Does MRR report money that is actually arriving?
