@@ -186,7 +186,7 @@ test.describe("Colleagues", () => {
       .eq("user_id", bob.id);
     expect(beforeCount).toBe(0);
 
-    await bobPage.getByRole("button", { name: /save to library/i }).click();
+    await bobPage.getByRole("button", { name: /add to library/i }).click();
     await expect(bobPage.getByText("Alice's rivers lesson")).toBeHidden();
 
     // The copy is real, is Bob's, and carries the snapshot.
@@ -206,6 +206,124 @@ test.describe("Colleagues", () => {
     expect(aliceCount).toBe(1);
 
     await bobContext.close();
+  });
+
+  test("a shared resource can be read before it is added, and the outline navigates it", async ({
+    page,
+  }) => {
+    /*
+     * The feed used to offer Save and Dismiss and no way to look first, so the
+     * only things to judge an offer on were its title and who sent it.
+     *
+     * The interesting half of this test is the outline. It renders through
+     * OutlineRail, which drives the SAME hook as the sidebar card but against a
+     * scroll container rather than the window. Getting that wrong is silent:
+     * the links render and highlight, and clicking them simply does nothing, or
+     * scrolls the page behind the scrim instead.
+     */
+    await connect(alice, bob);
+
+    // Long enough that the last heading starts well below the fold, or a click
+    // that does nothing at all would still leave it "visible".
+    const filler = Array.from({ length: 40 }, (_, i) => `Line ${i} of the body.`).join("\n\n");
+    const body = `# Rivers\n\n${filler}\n\n## Erosion\n\n${filler}\n\n## Deposition\n\n${filler}`;
+    await seedResource(alice, "Alice's rivers lesson", body);
+
+    const runId = (
+      await admin.from("tool_runs").select("id").eq("user_id", alice.id).single()
+    ).data!.id;
+    await admin.from("shares").insert({
+      sender_id: alice.id,
+      recipient_id: bob.id,
+      source_run_id: runId,
+      tool_slug: "lesson-planner",
+      title: "Alice's rivers lesson",
+      input: {},
+      output: body,
+    });
+
+    await signIn(page, bob);
+    await page.goto("/colleagues");
+
+    // The title is the open target. It is a button rather than the whole row,
+    // because the row carries Add and Dismiss and a button cannot nest inside
+    // one without swallowing their clicks.
+    await page.getByRole("button", { name: /Alice's rivers lesson/ }).click();
+
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByText(/shared by alice/i)).toBeVisible();
+    // The resource body rendered as markdown, h1 and all. Level 1 explicitly:
+    // the modal's own title is an h2 that also contains the word, and the
+    // outline repeats every heading as a button.
+    await expect(
+      dialog.getByRole("heading", { name: "Rivers", level: 1, exact: true }),
+    ).toBeAttached();
+    // The body is there and is being rendered as markdown rather than dumped
+    // as text. `first()` because the filler repeats under each heading.
+    await expect(dialog.getByText(/Line 0 of the body\./).first()).toBeVisible();
+
+    /*
+     * The floating button must NOT have leaked in. It portals to document.body,
+     * so if OutlineRail ever reused that presentation it would render OVER the
+     * scrim it is supposed to live inside.
+     */
+    await expect(page.getByRole("button", { name: /jump to section/i })).toHaveCount(0);
+
+    // Jump to the last heading, then prove the CONTAINER scrolled: the heading
+    // sits near the top of the scrollport. A bare toBeVisible() would pass even
+    // with the scrolling entirely broken.
+    await dialog.getByRole("button", { name: "Deposition" }).click();
+
+    await expect
+      .poll(
+        async () =>
+          dialog.evaluate((node) => {
+            const heading = node.querySelector<HTMLElement>("#deposition");
+            // The scrollport is the element that actually overflows.
+            const port = [...node.querySelectorAll<HTMLElement>("div")].find(
+              (el) => el.scrollHeight > el.clientHeight + 20 && el.scrollTop > 0,
+            );
+            if (!heading || !port) return null;
+            return Math.round(
+              heading.getBoundingClientRect().top - port.getBoundingClientRect().top,
+            );
+          }),
+        { timeout: 5000 },
+      )
+      .toBeLessThan(60);
+
+    // Adding from inside the modal KEEPS it open: the teacher opened this to
+    // read it, so closing it on save would take that away as a reward.
+    await dialog.getByRole("button", { name: /add to library/i }).click();
+    await expect(dialog.getByText(/in your library/i)).toBeVisible();
+    await expect(dialog).toBeVisible();
+
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+
+    // The feed row has gone, because the offer has been dealt with.
+    await expect(page.getByText("Alice's rivers lesson")).toBeHidden();
+
+    /*
+     * saved_run_id points at the copy. This is the assertion the whole
+     * "Shared with me" view rests on: that pointer IS the membership test, so
+     * if it is ever not stamped, the Library view silently holds nothing.
+     */
+    const { data: copies } = await admin
+      .from("tool_runs")
+      .select("id, output")
+      .eq("user_id", bob.id);
+    expect(copies).toHaveLength(1);
+    expect(copies?.[0].output).toBe(body);
+
+    const { data: share } = await admin
+      .from("shares")
+      .select("saved_at, saved_run_id")
+      .eq("recipient_id", bob.id)
+      .single();
+    expect(share?.saved_run_id).toBe(copies?.[0].id);
+    expect(share?.saved_at).not.toBeNull();
   });
 
   test("a recent row on Today still opens, and offers Share", async ({ page }) => {

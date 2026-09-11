@@ -10,6 +10,7 @@ import {
 } from "@phosphor-icons/react/dist/ssr";
 import { useAppShell } from "@/app/components/v2/AppShellContext";
 import ShareModal from "@/app/components/v2/ShareModal";
+import SharedResourceModal from "@/app/components/v2/SharedResourceModal";
 import { ToolTile } from "@/app/components/v2/Squircle";
 import {
   acceptColleagueRequest,
@@ -84,6 +85,7 @@ export default function ColleaguesPage() {
 
   const [inviteOpen, setInviteOpen] = useState(false);
   const [shareWith, setShareWith] = useState<ColleagueProfile | null>(null);
+  const [viewing, setViewing] = useState<Share | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
 
   /* ── Loading ─────────────────────────────────────────────────────────── */
@@ -222,14 +224,28 @@ export default function ColleaguesPage() {
     }
   };
 
+  /*
+   * What happens once a share is in the library, whichever button did it.
+   *
+   * The row leaves the feed. The feed asks to be dealt with, and this one has
+   * been: listSharedWithMe is unsaved-only, so a reload would not show it
+   * either, and newThisWeek counts only unsaved shares so the "N new" line
+   * drops with it. The resource is not lost, it has moved to the Library, where
+   * "Shared with me" now holds it.
+   */
+  const onAdded = useCallback((share: Share) => {
+    setShares((prev) => prev.filter((s) => s.id !== share.id));
+    setNotice("Added to your library.");
+    setError(null);
+  }, []);
+
   const onSave = async (share: Share) => {
     setSavingId(share.id);
     try {
       await saveSharedToLibrary(share);
-      setShares((prev) => prev.filter((s) => s.id !== share.id));
-      say("Saved to your library.");
+      onAdded(share);
     } catch {
-      setError("That could not be saved. Try again.");
+      setError("That could not be added. Try again.");
     } finally {
       setSavingId(null);
     }
@@ -373,6 +389,7 @@ export default function ColleaguesPage() {
                   key={share.id}
                   share={share}
                   saving={savingId === share.id}
+                  onOpen={() => setViewing(share)}
                   onSave={() => onSave(share)}
                   onDismiss={() => onDismiss(share)}
                 />
@@ -381,6 +398,14 @@ export default function ColleaguesPage() {
           )}
         </div>
       </div>
+
+      {/* The share stays on screen after it is added, so the teacher can carry
+          on reading what they opened it for. Only the feed row behind it goes. */}
+      <SharedResourceModal
+        share={viewing}
+        onClose={() => setViewing(null)}
+        onAdded={(_run, share) => onAdded(share)}
+      />
 
       <ShareModal
         open={shareWith !== null}
@@ -474,26 +499,34 @@ function Stat({
 function SharedRow({
   share,
   saving,
+  onOpen,
   onSave,
   onDismiss,
 }: {
   share: Share;
   saving: boolean;
+  onOpen: () => void;
   onSave: () => void;
   onDismiss: () => void;
 }) {
   const tool = v2ToolForSlug(share.tool_slug);
   const from = share.sender ? displayName(share.sender) : "a colleague";
+  const title = share.title?.trim() || typeLabel(share.tool_slug);
 
   return (
     <div className={styles.sharedRow}>
       <ToolTile icon={tool?.icon ?? "file-text"} solid={toolSolid(tool)} size="sm" />
       <span className={app.rowMain}>
-        <span className={app.rowTitle}>{share.title?.trim() || typeLabel(share.tool_slug)}</span>
+        {/* The TITLE opens it, not the row. The row carries three controls of
+            its own, and a button containing buttons is invalid markup that
+            swallows their clicks. */}
+        <button type="button" className={styles.open} onClick={onOpen}>
+          <span className={app.rowTitle}>{title}</span>
+        </button>
         <span className={app.rowMeta}>Shared by {from}</span>
       </span>
       <button type="button" className={styles.act} onClick={onSave} disabled={saving}>
-        {saving ? "Saving" : "Save to library"}
+        {saving ? "Adding" : "Add to library"}
       </button>
       <button type="button" className={styles.dismiss} onClick={onDismiss}>
         Dismiss

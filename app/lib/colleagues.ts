@@ -490,6 +490,34 @@ export async function saveSharedToLibrary(share: Share): Promise<ToolRun> {
   return run;
 }
 
+/**
+ * The shares that have become resources, keyed by the resource they became.
+ *
+ * saveSharedToLibrary stamps saved_run_id with the id of the tool_runs row it
+ * inserted, so an accepted share already points straight at its copy. That
+ * pointer IS the Library's "Shared with me" view: no column on tool_runs, no
+ * second source of truth, and nothing to keep in step.
+ *
+ * Shares still waiting in the feed have no saved_run_id and are dropped here.
+ * They are not in the library yet, which is the whole distinction this draws.
+ *
+ * Pure, so the mapping can be tested without a database.
+ */
+export function indexBySavedRun(shares: Share[]): Map<string, Share> {
+  const byRun = new Map<string, Share>();
+  for (const share of shares) {
+    if (share.saved_run_id) byRun.set(share.saved_run_id, share);
+  }
+  return byRun;
+}
+
+/** Which of this teacher's resources came from a colleague, keyed by run id.
+ *  Carries the whole share rather than a set of ids, because the view wants to
+ *  name the sender and open the snapshot, not just filter. */
+export async function sharedRunsById(): Promise<Map<string, Share>> {
+  return indexBySavedRun(await listSharedWithMe({ includeSaved: true }));
+}
+
 /** Dismiss without saving. Deleted rather than kept: an offer declined is not a
  *  fact worth storing, and the sender's own share count is what the share
  *  badges measure. */

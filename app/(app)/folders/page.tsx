@@ -17,9 +17,11 @@ import {
   TrashSimple,
   CircleNotch,
   DownloadSimple,
+  UsersThree,
 } from "@phosphor-icons/react/dist/ssr";
 import { useAppShell } from "@/app/components/v2/AppShellContext";
 import ShareModal from "@/app/components/v2/ShareModal";
+import SharedResourceModal from "@/app/components/v2/SharedResourceModal";
 import { ToolTile } from "@/app/components/v2/Squircle";
 import {
   listRecentRuns,
@@ -39,6 +41,8 @@ import {
   type Folder,
   type FolderColour,
 } from "@/app/lib/folders";
+import { sharedRunsById, type Share } from "@/app/lib/colleagues";
+import { displayName } from "@/app/lib/colleagueDisplay";
 import { v2ToolForSlug, toolSolid } from "@/app/lib/tools";
 import { typeLabel, formatDate } from "@/app/lib/toolRunDisplay";
 import app from "@/app/components/v2/app.module.css";
@@ -68,7 +72,7 @@ import styles from "./folders.module.css";
  */
 
 /*
- * Two views that are not folders.
+ * Three views that are not folders.
  *
  * The default (no selection) is the unfiled pile: folder_id IS NULL, what still
  * needs sorting. That is the useful thing to land on, because it is the only
@@ -77,9 +81,30 @@ import styles from "./folders.module.css";
  * ALL is a card in the grid rather than the default, so "show me everything"
  * stays one click away without being what you stare at every visit.
  *
- * Neither is a row in `folders`. Both are views over tool_runs.folder_id.
+ * None is a row in `folders`. ALL and Unfiled are views over
+ * tool_runs.folder_id; SHARED is something different again, below.
  */
 const ALL = "all";
+
+/*
+ * SHARED IS A FILTER, NOT A FOLDER, and the distinction is the whole design.
+ *
+ * It holds the resources that arrived from a colleague and were added: the runs
+ * whose ids appear as shares.saved_run_id (see indexBySavedRun). So membership
+ * is PROVENANCE, which is a fact about where a resource came from, and filing
+ * is a CHOICE about where the teacher keeps it. Those are independent, so:
+ *
+ *   - a shared resource can sit in "Shared with me" AND in Autumn 2 at once;
+ *   - filing one moves it out of Unfiled and leaves it here, because being
+ *     filed does not make it stop having come from Alice;
+ *   - nothing can be dropped ONTO it, because you cannot make a resource
+ *     shared by dragging it.
+ *
+ * The consequence to expect: the card counts no longer sum to the total, unlike
+ * ALL / Unfiled / folders, which partition. That is correct for an overlapping
+ * view and is not a bug to be fixed by making membership exclusive.
+ */
+const SHARED = "shared";
 
 /** null means unfiled, which is the default view. */
 type Selection = string | null;
@@ -109,6 +134,10 @@ function Library() {
 
   const [runs, setRuns] = useState<ToolRun[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
+  /** Which runs came from a colleague, keyed by run id. The whole share rather
+   *  than a set of ids, so a row can name its sender and open the snapshot. */
+  const [sharedBy, setSharedBy] = useState<Map<string, Share>>(new Map());
+  const [viewing, setViewing] = useState<Share | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -142,11 +171,20 @@ function Library() {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([listRecentRuns(1000), listFolders()])
-      .then(([r, f]) => {
+    Promise.all([
+      listRecentRuns(1000),
+      listFolders(),
+      // Caught on its own leg so a colleagues problem cannot take the Library
+      // down with it. Without this, a missing shares table turns the whole
+      // page into "your library could not be loaded", which is both alarming
+      // and untrue: the library is fine, one view over it is not available.
+      sharedRunsById().catch(() => new Map<string, Share>()),
+    ])
+      .then(([r, f, shared]) => {
         if (cancelled) return;
         setRuns(r);
         setFolders(f);
+        setSharedBy(shared);
       })
       .catch(() => {
         if (!cancelled) setError("Your library could not be loaded. Refresh to try again.");
@@ -162,10 +200,13 @@ function Library() {
   const countFor = useCallback(
     (id: Selection) => {
       if (id === ALL) return runs.length;
+      // Counted against `runs`, not against the share map, so a resource the
+      // teacher has since deleted stops being counted here too.
+      if (id === SHARED) return runs.filter((r) => sharedBy.has(r.id)).length;
       if (id === null) return runs.filter((r) => !r.folder_id).length;
       return runs.filter((r) => r.folder_id === id).length;
     },
-    [runs],
+    [runs, sharedBy],
   );
 
   const folderName = useCallback(
@@ -181,8 +222,17 @@ function Library() {
     return runs.filter((run) => {
       // No selection is the unfiled pile, not everything. ALL is the only view
       // that skips the folder test.
-      if (selected === null && run.folder_id) return false;
-      if (selected && selected !== ALL && run.folder_id !== selected) return false;
+      //
+      // SHARED tests provenance INSTEAD of folder, never as well: a shared
+      // resource filed into Autumn 2 must still appear here, so asking about
+      // folder_id at all would be the bug.
+      if (selected === SHARED) {
+        if (!sharedBy.has(run.id)) return false;
+      } else if (selected === null) {
+        if (run.folder_id) return false;
+      } else if (selected && selected !== ALL && run.folder_id !== selected) {
+        return false;
+      }
       if (!q) return true;
       const tool = v2ToolForSlug(run.tool_slug);
       const haystack = [run.title ?? "", tool?.name ?? typeLabel(run.tool_slug)]
@@ -190,7 +240,7 @@ function Library() {
         .toLowerCase();
       return haystack.includes(q);
     });
-  }, [runs, selected, query]);
+  }, [runs, selected, query, sharedBy]);
 
   /* ── Filing ─────────────────────────────────────────────────────────────
    *
@@ -308,6 +358,17 @@ function Library() {
     [folders, countFor, selected, select],
   );
 
+  /*
+   * One rule: in "Shared with me" a click READS it, everywhere else a click
+   * EDITS it. The row menu still carries Open for the editing route, so nothing
+   * is taken away.
+   *
+   * This also sidesteps a real gap for exactly these rows. `open` below is
+   * `if (tool) router.push(...)`, and v2ToolForSlug builds its index from
+   * href.replace("/tools/", ""), so a slug that does not match its route
+   * resolves to undefined and clicking does nothing at all, silently. The modal
+   * renders from the snapshot and always works.
+   */
   const open = useCallback(
     (run: ToolRun) => {
       const tool = v2ToolForSlug(run.tool_slug);
@@ -316,13 +377,24 @@ function Library() {
     [router],
   );
 
+  const openFrom = useCallback(
+    (run: ToolRun) => {
+      const share = selected === SHARED ? sharedBy.get(run.id) : undefined;
+      if (share) setViewing(share);
+      else open(run);
+    },
+    [selected, sharedBy, open],
+  );
+
   const total = runs.length;
   const heading =
     selected === ALL
       ? "All resources"
-      : selected
-        ? (folders.find((f) => f.id === selected)?.name ?? "Library")
-        : "Unfiled";
+      : selected === SHARED
+        ? "Shared with me"
+        : selected
+          ? (folders.find((f) => f.id === selected)?.name ?? "Library")
+          : "Unfiled";
 
   return (
     <>
@@ -434,6 +506,25 @@ function Library() {
               onDropTarget={() => {}}
             />
 
+            {/* Only once something has actually arrived. A teacher with no
+                colleagues should not be given a permanently empty view, in the
+                way the incoming requests panel only appears when there are
+                requests. Not a drop target: passing no onDropRun is what makes
+                it one, so provenance cannot be assigned by dragging. */}
+            {sharedBy.size > 0 && (
+              <FolderCard
+                id={SHARED}
+                name="Shared with me"
+                count={countFor(SHARED)}
+                neutral
+                icon={<UsersThree weight="fill" />}
+                selected={selected === SHARED}
+                dropping={false}
+                onSelect={() => select(selected === SHARED ? null : SHARED)}
+                onDropTarget={() => {}}
+              />
+            )}
+
             {folders.map((folder) => (
               <FolderCard
                 key={folder.id}
@@ -467,11 +558,13 @@ function Library() {
             <div className={app.shTitle}>
               <h2>{heading}</h2>
               <span className={app.shSub}>
-                {folders.length === 0
-                  ? "Make a folder to start filing"
-                  : selected === null
-                    ? "Drag any row onto a folder above"
-                    : "Drag a row onto Library to unfile it"}
+                {selected === SHARED
+                  ? "These came from colleagues. Filing one keeps it here too."
+                  : folders.length === 0
+                    ? "Make a folder to start filing"
+                    : selected === null
+                      ? "Drag any row onto a folder above"
+                      : "Drag a row onto Library to unfile it"}
               </span>
             </div>
           </div>
@@ -495,6 +588,11 @@ function Library() {
                     key={run.id}
                     run={run}
                     folderLabel={folderName(run.folder_id)}
+                    sharedFrom={
+                      selected === SHARED && sharedBy.get(run.id)?.sender
+                        ? displayName(sharedBy.get(run.id)!.sender!)
+                        : undefined
+                    }
                     dragging={draggingId === run.id}
                     deleting={deletingId === run.id}
                     view={view}
@@ -503,7 +601,7 @@ function Library() {
                       setDraggingId(null);
                       setDropTarget(undefined);
                     }}
-                    onOpen={() => open(run)}
+                    onOpen={() => openFrom(run)}
                     onMove={() => setMoving(run)}
                     onShare={() => setSharing(run)}
                     onDelete={() => setPendingDelete(run)}
@@ -544,6 +642,10 @@ function Library() {
         />
       )}
 
+      {/* No onAdded: these are already in the library, which is how the modal
+          knows to show the confirmation rather than the Add button. */}
+      <SharedResourceModal share={viewing} onClose={() => setViewing(null)} />
+
       <ShareModal
         open={sharing !== null}
         onClose={() => setSharing(null)}
@@ -562,6 +664,7 @@ function FolderCard({
   colour,
   count,
   neutral,
+  icon,
   selected,
   dropping,
   onSelect,
@@ -576,6 +679,9 @@ function FolderCard({
   count: number;
   /** A view rather than a real folder: slate, no menu, no drop target. */
   neutral?: boolean;
+  /** Overrides the glyph on a neutral card, for a view whose meaning is not
+   *  "a pile of things" — "Shared with me" is about who sent them. */
+  icon?: React.ReactNode;
   selected: boolean;
   dropping: boolean;
   onSelect: () => void;
@@ -673,7 +779,7 @@ function FolderCard({
           style={{ background: swatch.tint, color: swatch.solid }}
           aria-hidden="true"
         >
-          {neutral ? <Stack weight="fill" /> : <FolderIcon weight="fill" />}
+          {icon ?? (neutral ? <Stack weight="fill" /> : <FolderIcon weight="fill" />)}
         </span>
         <h3 className={styles.folderName}>{name}</h3>
         <span className={styles.folderCount}>
@@ -689,6 +795,7 @@ function FolderCard({
 function ResourceItem({
   run,
   folderLabel,
+  sharedFrom,
   dragging,
   deleting,
   view,
@@ -701,6 +808,11 @@ function ResourceItem({
 }: {
   run: ToolRun;
   folderLabel: string;
+  /** Who sent it, in the view where that is the point. Replaces the folder in
+   *  the meta line rather than joining it: in "Shared with me" the provenance
+   *  is what distinguishes one row from another, and the folder is one click
+   *  away in ALL. */
+  sharedFrom?: string;
   dragging: boolean;
   deleting: boolean;
   view: "grid" | "list";
@@ -740,10 +852,11 @@ function ResourceItem({
   };
   // The prototype's second line is "<tool>, <folder>". A card has no date
   // column, so the date joins the meta line there rather than being dropped.
+  const where = sharedFrom ? `from ${sharedFrom}` : folderLabel;
   const meta =
     view === "list"
-      ? `${label}, ${folderLabel}`
-      : `${label}, ${folderLabel}, ${formatDate(run.created_at)}`;
+      ? `${label}, ${where}`
+      : `${label}, ${where}, ${formatDate(run.created_at)}`;
 
   // Both layouts drag identically, so the handlers are shared rather than
   // written twice and drifting.
@@ -1252,6 +1365,21 @@ function EmptyState({
         <p className={app.emptyTitle}>Nothing filed yet</p>
         <p className={app.emptyBody}>
           Make something with any tool and it lands here automatically.
+        </p>
+      </div>
+    );
+  }
+
+  if (selected === SHARED) {
+    return (
+      <div className={app.empty}>
+        <span className={app.emptyIcon}>
+          <UsersThree weight="fill" />
+        </span>
+        <p className={app.emptyTitle}>Nothing added from colleagues yet</p>
+        <p className={app.emptyBody}>
+          When a colleague shares something and you add it, it stays here as well as in
+          whichever folder you file it in.
         </p>
       </div>
     );

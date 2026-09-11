@@ -1,0 +1,242 @@
+/* Reading a resource a colleague sent.
+   Tokens throughout, like ShareModal.module.css: they live on :root now
+   (app/globals.css), so a portal inherits them. */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(29, 23, 48, 0.45);
+  display: grid;
+  place-items: center;
+  z-index: 80;
+  padding: 20px;
+}
+
+/* THE SCROLL CONTRACT, and the thing most likely to be broken by a later edit.
+   The modal is a column with a bounded height; .body takes the slack and hides
+   its own overflow; .content is the only element that scrolls.
+
+   `min-height: 0` on .body is load-bearing. A flex child's default minimum is
+   its content size, so without it .body refuses to shrink, .content never
+   overflows, and the modal grows straight past the bottom of the screen with
+   no scrollbar anywhere.
+
+   dvh because 100vh on mobile is the LARGE viewport: with the URL bar showing,
+   the footer would sit below the fold. */
+.modal {
+  background: var(--j-card);
+  border-radius: var(--j-r-xl);
+  width: 100%;
+  max-width: 900px;
+  height: min(88dvh, 900px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-family: var(--font-jakarta), system-ui, sans-serif;
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--j-line);
+}
+
+.headText {
+  min-width: 0;
+  flex: 1;
+}
+
+.title {
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  line-height: 1.25;
+  color: var(--j-ink);
+  margin: 0;
+  outline: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sub {
+  font-size: 0.83rem;
+  color: var(--j-muted);
+  margin: 2px 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: none;
+  border-radius: 9999px;
+  background: transparent;
+  color: var(--j-muted);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.close:hover {
+  background: var(--j-tint);
+  color: var(--j-deep);
+}
+
+/* ── Body ────────────────────────────────────────────────────────────────── */
+
+.body {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 8px;
+  flex: 1;
+  min-height: 0; /* see the scroll contract above */
+  overflow: hidden;
+  padding: 16px 8px 16px 20px;
+}
+
+/* One column when the rail renders nothing: a short document with no outline
+   should not leave a 220px gutter of empty space beside it. */
+.body:has(> .content:only-child) {
+  grid-template-columns: 1fr;
+  padding-left: 8px;
+}
+
+.content {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 16px;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ── The structured-output notice ────────────────────────────────────────── */
+
+.notice {
+  background: var(--j-tint);
+  border-radius: var(--j-r);
+  padding: 20px;
+  margin-top: 4px;
+}
+
+.noticeTitle {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--j-deep);
+  margin: 0 0 6px;
+}
+
+.noticeBody {
+  font-size: 0.88rem;
+  color: var(--j-muted);
+  margin: 0;
+}
+
+/* ── Footer ──────────────────────────────────────────────────────────────── */
+
+.foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: flex-end;
+  flex: none;
+  padding: 16px 24px;
+  border-top: 1px solid var(--j-line);
+}
+
+.foot button {
+  border-radius: var(--j-pill);
+  padding: 10px 18px;
+  font-size: 0.87rem;
+  font-weight: 800;
+  font-family: inherit;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.error {
+  flex: 1;
+  font-size: 0.83rem;
+  color: var(--j-orange-ink);
+  margin: 0;
+}
+
+.cancel {
+  background: var(--j-card);
+  border-color: var(--j-line-2);
+  color: var(--j-body);
+}
+
+.cancel:hover {
+  border-color: var(--j-lilac-2);
+  color: var(--j-deep);
+}
+
+.save {
+  background: var(--j-purple);
+  color: #fff;
+}
+
+.save:hover {
+  background: var(--j-deep);
+}
+
+.save:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.save:disabled:hover {
+  background: var(--j-purple);
+}
+
+/* Not a button: once it is in the library there is nothing left to press. */
+.done {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 18px;
+  font-size: 0.87rem;
+  font-weight: 800;
+  color: var(--j-deep);
+}
+
+/* ── Narrow ──────────────────────────────────────────────────────────────
+ *
+ * The rail cannot be a sidebar here, and it deliberately does NOT become the
+ * floating button: that portals to document.body, which would put it on top of
+ * this modal's own scrim. It goes above the content instead, capped so a long
+ * outline cannot push the resource itself off the screen.
+ */
+@media (max-width: 820px) {
+  .body {
+    grid-template-columns: 1fr;
+    /* minmax(0, auto) rather than auto: an auto row sizes to its content even
+       past the container, which for a twenty heading outline would leave the
+       resource itself entirely below the fold. */
+    grid-template-rows: minmax(0, auto) 1fr;
+    padding: 12px 8px;
+  }
+
+  .modal {
+    height: min(92dvh, 900px);
+  }
+
+  /* The outline keeps its own scrollbar rather than growing. A third of the
+     body is enough to show a few headings and signal that there are more. */
+  .body > nav {
+    max-height: 33%;
+    padding-left: 8px;
+  }
+}
