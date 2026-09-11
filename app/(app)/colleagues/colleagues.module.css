@@ -177,7 +177,7 @@
 
 /* ── Shared with you ─────────────────────────────────────────────────────── */
 
-/* The row is not a button here, because it carries two of its own. Matches
+/* The row is not a button here, because it carries three of its own. Matches
    app.module.css .row otherwise. */
 .sharedRow {
   display: flex;
@@ -189,6 +189,27 @@
 
 .sharedRow:last-child {
   border-bottom: 0;
+}
+
+/* The title, which opens the resource. A button so it is reachable by keyboard
+   and announced as the action it is, stripped back to look like the text it
+   replaced: the affordance is the row, not a second styled control competing
+   with Add to library beside it. */
+.open {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.open:hover .rowTitle,
+.open:hover span {
+  color: var(--j-purple);
 }
 
 .act {

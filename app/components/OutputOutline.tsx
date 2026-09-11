@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { ArrowUp, X } from "lucide-react";
 import { ChatTeardropDots } from "@phosphor-icons/react/dist/ssr";
@@ -26,6 +26,10 @@ import styles from "./OutputOutline.module.css";
 /** Offset so a scrolled-to heading clears the sticky results header. Matches
  *  the value the four hardcoded navs used. */
 const SCROLL_OFFSET = 160;
+
+/** The same idea inside a modal, where there is no sticky header to clear and
+ *  160px of dead space above the heading would look like a mistake. */
+const MODAL_SCROLL_OFFSET = 24;
 
 interface Props {
   /** The generated markdown. The outline re-derives whenever this changes, so
@@ -54,7 +58,30 @@ function useMounted(): boolean {
   );
 }
 
-export default function OutputOutline({ markdown, title = "Jump to section" }: Props) {
+/**
+ * Heading extraction, active tracking and scrolling. The brain both
+ * presentations share.
+ *
+ * `scrollRoot` is the one axis of variation. Left undefined, everything below
+ * works against the window and the viewport, which is what all 32 tool forms
+ * want and what this component did before the hook existed. Handed an element,
+ * the same logic runs against that element's scrollport instead, which is what
+ * a modal needs: its content scrolls in an internal overflow container, so
+ * window.scrollTo would move the page behind the scrim and the viewport-relative
+ * IntersectionObserver would never fire.
+ */
+export function useOutline({
+  markdown,
+  scrollRoot,
+}: {
+  markdown: string | null;
+  /** The element that actually scrolls, or null/undefined for the window.
+   *
+   *  MUST arrive via useState and a callback ref, not useRef: a ref does not
+   *  re-render, so the observer effect below would run once with null and never
+   *  again, leaving the outline dead. */
+  scrollRoot?: HTMLElement | null;
+}) {
   const headings = useMemo(
     // Empty headings still occupy an index (see headings.ts) but have nothing
     // to label, so they are dropped here rather than from the id sequence.
@@ -62,14 +89,32 @@ export default function OutputOutline({ markdown, title = "Jump to section" }: P
     [markdown],
   );
 
-  const mounted = useMounted();
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
-  const fabRef = useRef<HTMLButtonElement | null>(null);
   // Suppresses the observer while a click-driven smooth scroll is in flight —
   // otherwise passing over intermediate headings would flicker the highlight
   // through them before settling.
   const scrollingTo = useRef<string | null>(null);
+
+  const contained = scrollRoot != null;
+  const offset = contained ? MODAL_SCROLL_OFFSET : SCROLL_OFFSET;
+
+  /** The rendered heading, looked up inside the scroll container first.
+   *
+   *  Ids are document-global, so a modal showing the same markdown as the page
+   *  behind it would have two elements answering to one id and getElementById
+   *  would return whichever came first. Scoping the query keeps the modal
+   *  correct in that case. CSS.escape because a slug can start with a digit,
+   *  which is a valid id but not a valid bare selector. */
+  const find = useCallback(
+    (id: string): HTMLElement | null => {
+      if (scrollRoot) {
+        const scoped = scrollRoot.querySelector<HTMLElement>(`#${CSS.escape(id)}`);
+        if (scoped) return scoped;
+      }
+      return document.getElementById(id);
+    },
+    [scrollRoot],
+  );
 
   useEffect(() => {
     if (headings.length === 0) return;
@@ -77,16 +122,19 @@ export default function OutputOutline({ markdown, title = "Jump to section" }: P
     const observer = new IntersectionObserver(
       (entries) => {
         if (scrollingTo.current) return;
-        // Whichever tracked heading is nearest the top of the viewport wins.
+        // Whichever tracked heading is nearest the top wins.
         const visible = entries
           .filter((e) => e.isIntersecting)
           .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
         if (visible[0]?.target.id) setActiveId(visible[0].target.id);
       },
       {
-        // Top band of the viewport: a heading counts as "current" once it
-        // reaches the reading position, not when it first peeks into view.
-        rootMargin: `-${SCROLL_OFFSET}px 0px -65% 0px`,
+        // null is the viewport, which is the behaviour every existing consumer
+        // has always had.
+        root: scrollRoot ?? null,
+        // Top band: a heading counts as "current" once it reaches the reading
+        // position, not when it first peeks into view.
+        rootMargin: `-${offset}px 0px -65% 0px`,
         threshold: 0,
       },
     );
@@ -96,12 +144,84 @@ export default function OutputOutline({ markdown, title = "Jump to section" }: P
     // there is nothing to observe and the positional fallback in `scrollTo`
     // takes over.
     const observed = headings
-      .map((h) => document.getElementById(h.id))
+      .map((h) => find(h.id))
       .filter((el): el is HTMLElement => el !== null);
     observed.forEach((el) => observer.observe(el));
 
     return () => observer.disconnect();
-  }, [headings]);
+  }, [headings, scrollRoot, offset, find]);
+
+  /**
+   * Scroll to a heading.
+   *
+   * Two strategies, in order:
+   *   1. The element carrying the id — works while MarkdownResult is rendering.
+   *   2. The nth heading in document order — the fallback once ResultPanel has
+   *      swapped in the Tiptap editor, whose ProseMirror DOM carries no ids.
+   *      Positional, so it keeps working after the teacher edits the heading
+   *      text, which is exactly what broke the navs this replaces.
+   *
+   * Strategy 2 is WINDOW ONLY. A contained outline always renders through
+   * MarkdownResult, which always emits ids, so the fallback has no job there
+   * and could only mis-target: `.prose-editor` matches the editor on a tool
+   * page, which in a modal is the document behind the scrim.
+   */
+  const go = useCallback(
+    (h: Heading) => {
+      const target = contained
+        ? find(h.id)
+        : (document.getElementById(h.id) ??
+          // `.prose-editor` is the class RichTextEditor gives Tiptap's editable
+          // node (see its editorProps); scoping to it avoids counting headings
+          // from the page chrome — "My results", the sidebar panels — which a
+          // bare h1/h2/h3 query would include, throwing the index off.
+          document.querySelectorAll<HTMLElement>(
+            ".prose-editor h1, .prose-editor h2, .prose-editor h3",
+          )[h.index]);
+
+      if (!target) return;
+
+      setActiveId(h.id);
+      scrollingTo.current = h.id;
+
+      if (scrollRoot) {
+        // The delta form, rather than offsetTop: offsetTop is measured from the
+        // nearest positioned ancestor, which need not be the scrollport, so it
+        // is wrong the moment anything between them is relative.
+        const delta =
+          target.getBoundingClientRect().top - scrollRoot.getBoundingClientRect().top;
+        scrollRoot.scrollTo({
+          top: scrollRoot.scrollTop + delta - offset,
+          behavior: "smooth",
+        });
+      } else {
+        window.scrollTo({
+          top: target.getBoundingClientRect().top + window.scrollY - offset,
+          behavior: "smooth",
+        });
+      }
+
+      // Long enough for a smooth scroll to settle before the observer resumes.
+      window.setTimeout(() => {
+        scrollingTo.current = null;
+      }, 700);
+    },
+    [contained, find, scrollRoot, offset],
+  );
+
+  // Nest ### under ## only when the document actually mixes levels; a flat list
+  // of ### headings should not all sit indented.
+  const minLevel = headings.length > 0 ? Math.min(...headings.map((h) => h.level)) : 1;
+
+  return { headings, minLevel, activeId, go };
+}
+
+export default function OutputOutline({ markdown, title = "Jump to section" }: Props) {
+  const { headings, minLevel, activeId, go } = useOutline({ markdown });
+
+  const mounted = useMounted();
+  const [open, setOpen] = useState(false);
+  const fabRef = useRef<HTMLButtonElement | null>(null);
 
   // Escape closes the sheet, and the body stops scrolling behind it. Both are
   // scoped to `open`, so nothing is installed while the sheet is shut.
@@ -119,47 +239,8 @@ export default function OutputOutline({ markdown, title = "Jump to section" }: P
     };
   }, [open]);
 
-  /**
-   * Scroll to a heading.
-   *
-   * Two strategies, in order:
-   *   1. getElementById — works while MarkdownResult is rendering the output.
-   *   2. The nth heading in document order — the fallback once ResultPanel has
-   *      swapped in the Tiptap editor, whose ProseMirror DOM carries no ids.
-   *      Positional, so it keeps working after the teacher edits the heading
-   *      text, which is exactly what broke the navs this replaces.
-   */
-  const scrollTo = (id: string, index: number) => {
-    // `.prose-editor` is the class RichTextEditor gives Tiptap's editable node
-    // (see its editorProps); scoping to it avoids counting headings from the
-    // page chrome — "My results", the sidebar panels — which a bare h1/h2/h3
-    // query would include, throwing the index off.
-    const target =
-      document.getElementById(id) ??
-      document.querySelectorAll<HTMLElement>(
-        ".prose-editor h1, .prose-editor h2, .prose-editor h3",
-      )[index];
-
-    if (!target) return;
-
-    setActiveId(id);
-    scrollingTo.current = id;
-    window.scrollTo({
-      top: target.getBoundingClientRect().top + window.scrollY - SCROLL_OFFSET,
-      behavior: "smooth",
-    });
-    // Long enough for a smooth scroll to settle before the observer resumes.
-    window.setTimeout(() => {
-      scrollingTo.current = null;
-    }, 700);
-  };
-
   // One heading is a title, not an outline — nothing to navigate between.
   if (headings.length < 2) return null;
-
-  // Nest ### under ## only when the document actually mixes levels; a flat list
-  // of ### headings should not all sit indented.
-  const minLevel = Math.min(...headings.map((h) => h.level));
 
   const list = (
     <OutlineList
@@ -170,7 +251,7 @@ export default function OutputOutline({ markdown, title = "Jump to section" }: P
         // Close BEFORE scrolling, so the scrim is not animating away over the
         // movement. Harmless on desktop, where the sheet is never open.
         setOpen(false);
-        scrollTo(h.id, h.index);
+        go(h);
       }}
     />
   );
@@ -237,8 +318,50 @@ export default function OutputOutline({ markdown, title = "Jump to section" }: P
 }
 
 /**
- * The links themselves, shared by the card and the sheet so there is one
- * indentation rule and one active style rather than two that drift.
+ * The outline as a plain column, for a scroll container that is not the page.
+ *
+ * A third presentation rather than a fourth component. The modal cannot use
+ * either of the other two: the card assumes the page scrolls beneath it, and
+ * the floating button portals to document.body, which would put it ON TOP of
+ * the scrim it is supposed to be inside.
+ *
+ * What it deliberately does NOT do, all of which the modal owns instead:
+ * no body scroll lock, no Escape handler, no portal.
+ */
+export function OutlineRail({
+  markdown,
+  scrollRoot,
+  title = "Jump to section",
+}: {
+  markdown: string | null;
+  /** The scrolling element. Null until the modal has mounted its body, which
+   *  is why this must come from state rather than a ref. */
+  scrollRoot: HTMLElement | null;
+  title?: string;
+}) {
+  const { headings, minLevel, activeId, go } = useOutline({ markdown, scrollRoot });
+
+  // Same rule as the card: one heading is a title, not an outline.
+  if (headings.length < 2) return null;
+
+  return (
+    <nav className={styles.rail} aria-label={title}>
+      <p className={styles.railTitle}>{title}</p>
+      <div className={styles.railList}>
+        <OutlineList
+          headings={headings}
+          minLevel={minLevel}
+          activeId={activeId}
+          onPick={go}
+        />
+      </div>
+    </nav>
+  );
+}
+
+/**
+ * The links themselves, shared by the card, the sheet and the rail so there is
+ * one indentation rule and one active style rather than three that drift.
  */
 function OutlineList({
   headings,

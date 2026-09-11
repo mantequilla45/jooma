@@ -30,6 +30,35 @@ export function typeLabel(slug: string) {
   return TYPE_LABEL[slug] ?? toolForSlug(slug)?.label ?? slug;
 }
 
+/*
+ * Three tools put JSON in tool_runs.output rather than markdown, because what
+ * they make is a structure and not a document: a deck of slides, a list of
+ * questions. See TOOL_SLUG in LessonSlideshowForm, CpdSlideshowForm and
+ * QuizGeneratorForm, each of which JSON.stringify's its result before saving.
+ *
+ * Anything that renders an output it did not generate itself has to ask first.
+ * Handing one of these to MarkdownResult produces a screenful of literal braces,
+ * which reads as a broken resource rather than as the wrong renderer.
+ */
+const STRUCTURED_OUTPUT_SLUGS = new Set([
+  "lesson-slideshow",
+  "cpd-slideshow",
+  "quiz-generator",
+]);
+
+/**
+ * True when `output` holds JSON rather than markdown.
+ *
+ * Takes the output too, when the caller has it, because a hardcoded slug list
+ * goes stale the moment a fourth structured tool is added and nobody thinks to
+ * update this. A body that opens with `[` is a JSON array whatever the slug
+ * says, so the shape gets the final word.
+ */
+export function isStructuredOutput(slug: string, output?: string): boolean {
+  if (STRUCTURED_OUTPUT_SLUGS.has(slug)) return true;
+  return output !== undefined && output.trimStart().startsWith("[");
+}
+
 export function formatDate(iso: string) {
   const d = new Date(iso);
   const date = d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
