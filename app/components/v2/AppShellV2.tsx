@@ -6,6 +6,7 @@ import SideNavV2 from "@/app/components/v2/SideNavV2";
 import TopBarV2 from "@/app/components/v2/TopBarV2";
 import SupportLauncher from "@/app/components/SupportLauncher";
 import AnnouncementBanner from "@/app/components/AnnouncementBanner";
+import DeletionBanner from "@/app/components/v2/DeletionBanner";
 import { SquircleDefs } from "@/app/components/v2/Squircle";
 import { useAppShellSettings } from "@/app/components/v2/AppShellContext";
 import styles from "./AppShellV2.module.css";
@@ -202,6 +203,10 @@ export default function AppShellV2({
           onMenuClick={() => setNavOpen(true)}
           menuButtonRef={menuButtonRef}
         />
+        {/* Not behind shellBanner: a pending deletion is the state of the
+            account, not an announcement, so it shows on every screen that
+            carries the chrome including the ones that opt out of banners. */}
+        <DeletionBanner />
         {shellBanner && <AnnouncementBanner />}
         <div className={shellContentClassName ?? appStyles.wrap}>{children}</div>
       </main>

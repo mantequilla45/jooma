@@ -70,6 +70,12 @@ const PUBLIC_PATHS = [
   // Stripe calls this server-to-server with no session; it verifies its own
   // signature, so it must bypass the auth redirect.
   "/api/stripe/webhook",
+  // Vercel Cron calls these server-to-server with no session cookie. Without
+  // this entry the request 307s to /login and the cron log records a redirect
+  // that looks like a successful run, so scheduled account deletions would
+  // silently never happen. Each cron route checks CRON_SECRET itself, which is
+  // the actual boundary -- the same arrangement as the Stripe webhook above.
+  "/api/cron",
   // Google Search Console's ownership proof. Googlebot fetches this signed
   // out, and the matcher below excludes images and _next but NOT .html, so
   // without this entry the file 307s to /login and verification fails.
