@@ -115,7 +115,7 @@ test.describe("Timetable setup", () => {
     await page.getByRole("button", { name: "Continue" }).click();
 
     // Step 1: leave the default periods alone, they match the migration.
-    await expect(page.getByRole("heading", { name: "When is your day?" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "What are your rows called?" })).toBeVisible();
     await page.getByRole("button", { name: "Continue" }).click();
 
     // Step 2: put Maths in Monday's first period.
@@ -231,6 +231,35 @@ test.describe("Lessons in a week", () => {
     expect(inSlot[0]!.subject).toBe("English");
   });
 
+  test("adding a lesson does not ask for a topic, editing one does", async ({ page }) => {
+    await signIn(page, teacher);
+    await page.goto("/timetable");
+    await waitForGrid(page);
+
+    // Laying out a week is a fast pass over subjects and year groups. The topic
+    // is the one thing a teacher cannot answer at that moment.
+    await page.getByRole("button", { name: "Add a lesson, Monday, 9:00" }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toHaveAttribute("aria-label", "Add a lesson");
+    await expect(dialog.locator("#slot-topic")).toHaveCount(0);
+    await expect(dialog.locator("#slot-subject")).toBeVisible();
+    await expect(dialog.locator("#slot-year")).toBeVisible();
+
+    await fillSubject(page, "Maths");
+    await dialog.getByRole("button", { name: "Add lesson" }).click();
+    await expect(page.getByRole("button", { name: "Edit Maths, Monday, 9:00" })).toBeVisible({
+      timeout: 30_000,
+    });
+
+    // THE OTHER HALF: the field must still exist on an edit, because that is
+    // where both prompts for a topic land. makeItHref returns null without one,
+    // so a topic that could never be typed would strand every lesson on
+    // "Add a topic first" with nowhere to go.
+    await page.getByRole("button", { name: "Edit Maths, Monday, 9:00" }).click();
+    await expect(dialog).toHaveAttribute("aria-label", "Edit lesson");
+    await expect(dialog.locator("#slot-topic")).toBeVisible();
+  });
+
   test("deleting a lesson says so, and empties the slot", async ({ page }) => {
     await seedLesson(teacher, { weekStart: week, day: "mon", period: 0, subject: "Maths" });
 
@@ -282,6 +311,141 @@ test.describe("Lessons in a week", () => {
     const rows = await listLessons(teacher, week);
     expect(rows).toHaveLength(1);
     expect(rows[0]!.resource_id).toBeNull();
+  });
+});
+
+test.describe("The rows of the week", () => {
+  let teacher: TestTeacher;
+  const week = mondayOf();
+
+  test.beforeEach(async () => {
+    teacher = await createTeacher("Tess");
+    await seedPattern(teacher, { yearGroup: "Year 4" });
+  });
+
+  test.afterEach(async () => {
+    await deleteTeacher(teacher);
+  });
+
+  test("a row can be renamed, and the grid follows", async ({ page }) => {
+    await signIn(page, teacher);
+    await page.goto("/timetable");
+    await waitForGrid(page);
+
+    await page.getByRole("button", { name: "Edit rows" }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+
+    // THE REQUEST: a row is a label, not a time. A teacher who thinks in
+    // "Period 2" should be able to say so.
+    const field = dialog.getByLabel("Period 2 label");
+    await field.fill("Period 2");
+    await expect(field).toHaveValue("Period 2");
+    await dialog.getByRole("button", { name: "Save rows" }).click();
+
+    // The grid's empty cells are labelled by their period, so this is the label
+    // reaching the thing the teacher actually looks at.
+    await expect(page.getByRole("button", { name: "Add a lesson, Monday, Period 2" })).toBeVisible({
+      timeout: 30_000,
+    });
+
+    const { data } = await admin
+      .from("timetable_pattern")
+      .select("periods")
+      .eq("user_id", teacher.id)
+      .single();
+    expect((data!.periods as string[])[1]).toBe("Period 2");
+  });
+
+  test("a row left blank falls back to its default", async ({ page }) => {
+    await signIn(page, teacher);
+    await page.goto("/timetable");
+    await waitForGrid(page);
+
+    await page.getByRole("button", { name: "Edit rows" }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Period 1 label").fill("");
+    await dialog.getByRole("button", { name: "Save rows" }).click();
+
+    // An empty label would leave a column heading that says nothing and, on
+    // mobile, a cell that cannot say which slot it fills.
+    await expect(page.getByRole("button", { name: "Add a lesson, Monday, 9:00" })).toBeVisible({
+      timeout: 30_000,
+    });
+  });
+
+  test("a row can be added", async ({ page }) => {
+    await signIn(page, teacher);
+    await page.goto("/timetable");
+    await waitForGrid(page);
+
+    await page.getByRole("button", { name: "Edit rows" }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByRole("button", { name: "Add a row" }).click();
+    await dialog.getByLabel("Period 5 label").fill("After school");
+    await dialog.getByRole("button", { name: "Save rows" }).click();
+
+    await expect(
+      page.getByRole("button", { name: "Add a lesson, Monday, After school" }),
+    ).toBeVisible({ timeout: 30_000 });
+
+    const { data } = await admin
+      .from("timetable_pattern")
+      .select("periods")
+      .eq("user_id", teacher.id)
+      .single();
+    expect(data!.periods as string[]).toHaveLength(5);
+  });
+
+  test("removing an occupied row takes its lessons and shifts the rest up", async ({ page }) => {
+    await seedLesson(teacher, { weekStart: week, day: "mon", period: 0, subject: "Maths" });
+    await seedLesson(teacher, { weekStart: week, day: "mon", period: 1, subject: "English" });
+
+    await signIn(page, teacher);
+    await page.goto("/timetable");
+    await waitForGrid(page);
+    await expect(page.getByRole("button", { name: "Edit Maths, Monday, 9:00" })).toBeVisible();
+
+    await page.getByRole("button", { name: "Edit rows" }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByRole("button", { name: "Remove period 1" }).click();
+
+    // A row with lessons in it is a conversation, not a silent delete. The
+    // migration leaves `period` unconstrained precisely so the client can ask.
+    await expect(dialog.getByText(/It has 1 lesson in it this week/)).toBeVisible();
+    await dialog.getByRole("button", { name: "Remove row" }).click();
+    await dialog.getByRole("button", { name: "Save rows" }).click();
+
+    // English moves up into row 0, and row 0 is now labelled "11:00": removing
+    // the first row takes its LABEL with it as well as its lessons, so the
+    // surviving row keeps the name it always had rather than inheriting "9:00".
+    // The lesson moved; the label did not.
+    await expect(page.getByRole("button", { name: "Edit English, Monday, 11:00" })).toBeVisible({
+      timeout: 30_000,
+    });
+
+    /*
+     * WAIT FOR THE SAVE TO ANNOUNCE ITSELF before reading the database.
+     *
+     * The cell above appears as soon as the grid re-renders, which happens while
+     * the renumber is still in flight: saveRows deletes, then shifts every row
+     * below up, then saves the pattern. Reading straight after the cell appears
+     * races the last of those writes, and the page is torn down mid-request, so
+     * the PATCH is ABORTED. It shows up as a lesson stranded at its old period
+     * with no error anywhere, which reads exactly like a broken renumber rather
+     * than a test that did not wait. Cost most of an afternoon.
+     *
+     * The status line is the honest signal: saveRows sets it last, after every
+     * write has resolved.
+     */
+    await expect(
+      page.locator("[role=status]").filter({ hasText: "Rows saved." }),
+    ).toBeVisible({ timeout: 30_000 });
+
+    const rows = await listLessons(teacher, week);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.subject).toBe("English");
+    expect(rows[0]!.period).toBe(0);
   });
 });
 

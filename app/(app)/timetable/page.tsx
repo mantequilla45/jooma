@@ -7,6 +7,7 @@ import {
   CaretRight,
   CalendarPlus,
   Plus,
+  Rows,
   CalendarBlank,
   Folder as FolderIcon,
 } from "@phosphor-icons/react/dist/ssr";
@@ -26,6 +27,10 @@ import {
   updateLesson,
   attachResource,
   deleteLesson,
+  deleteLessonsInPeriod,
+  renumberLessonsAbove,
+  lessonsInPeriod,
+  periodLabel,
   mondayOf,
   shiftWeek,
   dateOfSlot,
@@ -39,6 +44,7 @@ import {
 } from "@/app/lib/timetable";
 import SetupWizard from "./SetupWizard";
 import SlotEditor, { type SlotTarget, type SlotDraft } from "./SlotEditor";
+import PeriodEditor, { type PeriodPlan } from "./PeriodEditor";
 import app from "@/app/components/v2/app.module.css";
 import styles from "./timetable.module.css";
 
@@ -77,6 +83,7 @@ export default function TimetablePage() {
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<{ text: string; error: boolean } | null>(null);
   const [target, setTarget] = useState<SlotTarget | null>(null);
+  const [editingRows, setEditingRows] = useState(false);
   const [dropOn, setDropOn] = useState<string | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
 
@@ -248,6 +255,69 @@ export default function TimetablePage() {
     }
   }, [target]);
 
+  /*
+   * Save the rows of the week.
+   *
+   * Removals first, and DESCENDING, which is the part that has to be right. Each
+   * removal empties its row and then shifts everything below it up one, so doing
+   * the lowest index first would renumber the rows the later removals are still
+   * named after. Going from the bottom up means an index that has not been
+   * handled yet still means what it meant when the modal was open.
+   *
+   * Pessimistic throughout. A period list that appeared to save and then snapped
+   * back would leave the teacher unsure which week they are looking at, and the
+   * lessons being deleted underneath it make that worse, not better.
+   */
+  const saveRows = useCallback(
+    async (plan: PeriodPlan) => {
+      if (!week || !pattern) return;
+      setSaving(true);
+      setStatus(null);
+      try {
+        let removedLessons = 0;
+        for (const period of [...plan.removed].sort((a, b) => b - a)) {
+          removedLessons += lessonsInPeriod(lessons, period).length;
+          await deleteLessonsInPeriod(week, period);
+          await renumberLessonsAbove(week, period);
+        }
+
+        const saved = await savePattern({
+          periods: plan.periods,
+          // The wizard owns these two. Carried through untouched so saving rows
+          // cannot quietly discard the year group or the seed behind them.
+          yearGroup: pattern.year_group,
+          slots: pattern.slots,
+        });
+        setPattern(saved);
+        setLessons(await openWeek(week));
+        setEditingRows(false);
+        setStatus({
+          text:
+            removedLessons > 0
+              ? `Rows saved. ${removedLessons} ${removedLessons === 1 ? "lesson" : "lessons"} removed from this week.`
+              : "Rows saved.",
+          error: false,
+        });
+      } catch {
+        setStatus({ text: "Those rows could not be saved. Try again.", error: true });
+      } finally {
+        setSaving(false);
+      }
+    },
+    [week, pattern, lessons],
+  );
+
+  /* Stable identities for the period modal's props.
+     ModalShell keeps a keydown listener and restores focus on teardown, so a
+     prop that changes identity on every render churns that effect while the
+     modal is open. saveRows sets state several times with awaited writes in
+     flight, which is exactly when that must not happen. */
+  const closeRows = useCallback(() => setEditingRows(false), []);
+  const countInPeriod = useCallback(
+    (period: number) => lessonsInPeriod(lessons, period).length,
+    [lessons],
+  );
+
   /* Attaching, from a drop or from the strip's chooser. Optimistic, in the
      house pattern: capture before, set, await, roll back on failure. */
   const attach = useCallback(
@@ -385,7 +455,16 @@ export default function TimetablePage() {
         </button>
         <button
           type="button"
-          className={`${app.btn} ${app.btnP} ${styles.ttbarEnd}`}
+          className={`${app.btn} ${styles.ttbarEnd}`}
+          onClick={() => setEditingRows(true)}
+          disabled={loading || !pattern}
+        >
+          <Rows className={app.btnIcon} />
+          Edit rows
+        </button>
+        <button
+          type="button"
+          className={`${app.btn} ${app.btnP}`}
           onClick={() => setTarget(firstFreeSlot(byCell, periods))}
           disabled={loading}
         >
@@ -408,10 +487,10 @@ export default function TimetablePage() {
           </div>
         ))}
 
-        {periods.map((label, row) => (
+        {periods.map((_, row) => (
           <PeriodRow
             key={row}
-            label={label}
+            label={periodLabel(periods, row)}
             row={row}
             byCell={byCell}
             dropOn={dropOn}
@@ -575,6 +654,23 @@ export default function TimetablePage() {
           onDelete={removeSlot}
         />
       )}
+
+      {editingRows && (
+        <PeriodEditor
+          periods={periods}
+          saving={saving}
+          /* Counted against the week on screen, which is the week the confirm
+             is about: removing a row deletes the lessons in THIS week, not in
+             every week the teacher has ever opened.
+
+             Memoised, like closeRows below. An inline arrow here is a new prop
+             on every render, and saveRows calls setState several times while
+             its awaited writes are in flight. */
+          countInPeriod={countInPeriod}
+          onCancel={closeRows}
+          onSave={saveRows}
+        />
+      )}
     </>
   );
 }
@@ -734,7 +830,7 @@ function LessonChooser({
       <option value="">Put on a lesson</option>
       {lessons.map((l) => (
         <option key={l.id} value={l.id}>
-          {dayName(l.day)}, {periods[l.period] ?? ""}, {l.subject}
+          {dayName(l.day)}, {periodLabel(periods, l.period)}, {l.subject}
         </option>
       ))}
     </select>
