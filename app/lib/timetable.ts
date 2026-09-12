@@ -30,8 +30,31 @@ export const TIMETABLE_DAYS = [
 
 export type TimetableDay = (typeof TIMETABLE_DAYS)[number]["key"];
 
-/** The prototype's school day, and the wizard's starting point. */
+/**
+ * The prototype's school day, and the wizard's starting point.
+ *
+ * DUPLICATED IN TWO OTHER PLACES that must stay in step: the column default in
+ * the migration (20260903000000_timetable.sql) and seedPattern in
+ * tests/support/users.ts. Neither is enforced, so a change here is a change in
+ * three files.
+ */
 export const DEFAULT_PERIODS = ["9:00", "11:00", "13:15", "14:45"];
+
+/**
+ * What a row is called when the teacher has not named it.
+ *
+ * A period label is free text: the teacher may keep the time, rename it to
+ * "Period 2" or "Form time", or leave it blank. Blank is the interesting case,
+ * because an empty left-hand column labels nothing and an empty inline label on
+ * mobile leaves a cell that cannot say which slot it fills.
+ *
+ * Beyond the fourth row there is no default time to fall back to, so the
+ * position is the honest answer. The column allows ten rows and DEFAULT_PERIODS
+ * has four, so rows five to ten reach the second branch every time.
+ */
+export function periodLabel(periods: string[], index: number): string {
+  return periods[index]?.trim() || DEFAULT_PERIODS[index] || `Period ${index + 1}`;
+}
 
 /** Index of a day in the week, which is also its grid column. */
 export function dayIndex(day: TimetableDay): number {
@@ -343,6 +366,72 @@ export async function deleteLesson(id: string): Promise<void> {
   const supabase = createClient();
   const { error } = await supabase.from("timetable_lessons").delete().eq("id", id);
   if (error) throw error;
+}
+
+/** How many lessons sit in a period, for the count the remove-row confirm shows. */
+export function lessonsInPeriod(lessons: TimetableLesson[], period: number): TimetableLesson[] {
+  return lessons.filter((l) => l.period === period);
+}
+
+/**
+ * Empty one row of one week. Used when a teacher removes a period that still
+ * has lessons in it, after they have confirmed the count.
+ */
+export async function deleteLessonsInPeriod(weekStart: string, period: number): Promise<void> {
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("timetable_lessons")
+    .delete()
+    .eq("week_start", weekStart)
+    .eq("period", period);
+  if (error) throw error;
+}
+
+/**
+ * Close the gap a removed row leaves: every lesson below it moves up one.
+ *
+ * WRITTEN DESCENDING, LOWEST INDEX LAST, and that ordering is the whole reason
+ * this is a loop rather than one update. `period` is part of the unique index on
+ * (user_id, week_start, day, period), so moving period 3 down to 2 while 2 is
+ * still occupied collides. Going from the top down means the destination has
+ * always just been vacated.
+ *
+ * Postgres checks a unique index per statement, not per transaction, so a single
+ * `period = period - 1` over the whole range would trip on the first row it
+ * moved. Hence one update per period, in order.
+ */
+export async function renumberLessonsAbove(weekStart: string, removed: number): Promise<void> {
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from("timetable_lessons")
+    .select("period")
+    .eq("week_start", weekStart)
+    .gt("period", removed);
+  if (error) throw error;
+
+  // Which rows actually need moving, nearest the gap first.
+  const rows = [...new Set(((data ?? []) as Array<{ period: number }>).map((r) => r.period))].sort(
+    (a, b) => a - b,
+  );
+
+  for (const period of rows) {
+    const { data: moved, error: moveError } = await supabase
+      .from("timetable_lessons")
+      .update({ period: period - 1 })
+      .eq("week_start", weekStart)
+      .eq("period", period)
+      // Selected back deliberately. An update that matches nothing is not an
+      // error in PostgREST: it returns cleanly having done nothing at all, which
+      // is indistinguishable from success and leaves a lesson stranded in a row
+      // the grid no longer draws. Asking for the rows back is the only way this
+      // failure mode is visible.
+      .select("id");
+    if (moveError) throw moveError;
+    if (!moved || moved.length === 0) {
+      throw new Error(`Could not move lessons out of period ${period}.`);
+    }
+  }
 }
 
 /* ── Derivations, shared by the grid and Today ─────────────────────────────── */

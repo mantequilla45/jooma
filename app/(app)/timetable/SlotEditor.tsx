@@ -48,17 +48,32 @@ function ModalShell({
 }) {
   const returnTo = useRef<HTMLElement | null>(null);
 
+  /*
+   * Held in a ref so the effect below can run ONCE, on open and close, and
+   * never in between.
+   *
+   * Depending on [onCancel] directly looks harmless and is not: callers pass an
+   * inline arrow, so its identity changes on every render of the page. Any
+   * setState while the modal is open then re-runs this effect's cleanup, and
+   * that cleanup moves focus. A modal whose save does several awaited requests
+   * in a row gets its focus yanked mid-flight and the in-flight request is
+   * ABORTED, which surfaces as a write that silently does nothing: no error, no
+   * rejection, just a promise that never settles. Cost an afternoon.
+   */
+  const cancelRef = useRef(onCancel);
+  cancelRef.current = onCancel;
+
   useEffect(() => {
     returnTo.current = document.activeElement as HTMLElement | null;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCancel();
+      if (e.key === "Escape") cancelRef.current();
     };
     document.addEventListener("keydown", onKey);
     return () => {
       document.removeEventListener("keydown", onKey);
       returnTo.current?.focus?.();
     };
-  }, [onCancel]);
+  }, []);
 
   return (
     <div
@@ -156,29 +171,36 @@ export default function SlotEditor({
         />
       </div>
 
-      <div className={styles.field}>
-        <label className={styles.fieldLabel} htmlFor="slot-topic">
-          Topic
-        </label>
-        <input
-          id="slot-topic"
-          ref={topicRef}
-          value={topic}
-          maxLength={80}
-          onChange={(e) => setTopic(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              submit();
-            }
-          }}
-          placeholder="Equivalent fractions"
-          className={styles.fieldInput}
-        />
-        <span className={styles.fieldHint}>
-          Jooma needs the topic before it can make anything for this lesson.
-        </span>
-      </div>
+      {/* Only when editing. Laying out a week is a fast pass over subjects and
+          year groups, and the topic is the one thing a teacher cannot answer
+          yet at that moment. It stays on the edit form because that is where
+          both prompts for it land: the cell's "Add a topic first" and Today's
+          "Add a topic" each open an existing lesson with this field focused. */}
+      {editing && (
+        <div className={styles.field}>
+          <label className={styles.fieldLabel} htmlFor="slot-topic">
+            Topic
+          </label>
+          <input
+            id="slot-topic"
+            ref={topicRef}
+            value={topic}
+            maxLength={80}
+            onChange={(e) => setTopic(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                submit();
+              }
+            }}
+            placeholder="Equivalent fractions"
+            className={styles.fieldInput}
+          />
+          <span className={styles.fieldHint}>
+            Jooma needs the topic before it can make anything for this lesson.
+          </span>
+        </div>
+      )}
 
       <div className={styles.field}>
         <label className={styles.fieldLabel} htmlFor="slot-year">

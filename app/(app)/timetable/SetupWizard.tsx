@@ -6,6 +6,7 @@ import { YEAR_GROUPS } from "@/app/lib/formOptions";
 import {
   TIMETABLE_DAYS,
   DEFAULT_PERIODS,
+  periodLabel,
   type PatternSlot,
   type TimetableDay,
 } from "@/app/lib/timetable";
@@ -222,9 +223,10 @@ export default function SetupWizard({
 
       {step === 1 && (
         <>
-          <h2 className={styles.wizardTitle}>When is your day?</h2>
+          <h2 className={styles.wizardTitle}>What are your rows called?</h2>
           <p className={styles.wizardSub}>
-            These label the rows of your week. Most people leave them as they are.
+            These label the rows of your week. Call them whatever you call them, times or
+            names, and leave one blank to use its time. You can change any of this later.
           </p>
 
           {periods.map((p, i) => (
@@ -234,8 +236,8 @@ export default function SetupWizard({
                 value={p}
                 maxLength={12}
                 onChange={(e) => setPeriodAt(i, e.target.value)}
-                aria-label={`Period ${i + 1} time`}
-                placeholder="9:00"
+                aria-label={`Period ${i + 1} label`}
+                placeholder={periodLabel(periods, i)}
                 className={styles.fieldInput}
               />
               <button
@@ -257,7 +259,7 @@ export default function SetupWizard({
               onClick={() => setPeriods((prev) => [...prev, ""])}
             >
               <Plus className={app.btnIcon} />
-              Add a period
+              Add a row
             </button>
           )}
         </>
@@ -282,7 +284,7 @@ export default function SetupWizard({
               {periods.map((p, row) => (
                 <Row
                   key={row}
-                  label={p || `Period ${row + 1}`}
+                  label={periodLabel(periods, row)}
                   row={row}
                   subjects={subjects}
                   slots={slots}
